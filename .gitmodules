@@ -1,0 +1,3 @@
+[submodule "lfads-torch"]
+	path = lfads-torch
+	url = https://github.com/arsedler9/lfads-torch.git
