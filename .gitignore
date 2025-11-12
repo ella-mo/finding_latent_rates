@@ -1,2 +1,8 @@
 data/
 .DS_Store   
+data_inspection/files/
+data_inspection/visualizations/
+__pycache__/
+.mat
+.npy
+.png
