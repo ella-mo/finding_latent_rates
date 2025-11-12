@@ -3,6 +3,6 @@ data/
 data_inspection/files/
 data_inspection/visualizations/
 __pycache__/
-.mat
-.npy
-.png
+lfads_output_evaluation/files/
+lfads_output_evaluation/visualizations/
+lfads_output_evaluation/data/
