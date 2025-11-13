@@ -36,30 +36,27 @@ def prepare_output(lfads_output, train_indices, valid_indices, data_file, bin_si
         print(f'train rate shape: {train_rates.shape}, valid rates shape: {valid_rates.shape} ')
     
     n_sessions = len(train_idx) + len(valid_idx)
-    factors = np.empty((n_sessions, *train_factors.shape[1:]), dtype=train_factors.dtype)
-    rates = np.empty((n_sessions, *train_rates.shape[1:]), dtype=train_rates.dtype)
+    all_indices = np.concatenate([train_idx, valid_idx])
+    
+    factors = np.concatenate([train_factors, valid_factors], axis=0)
+    rates = np.concatenate([train_rates, valid_rates], axis=0)
 
-
-    factors[train_idx] = train_factors
-    factors[valid_idx] = valid_factors
-
-    rates[train_idx] = train_rates
-    rates[valid_idx] = valid_rates
-
-    order = np.argsort(np.concatenate([train_idx, valid_idx]))
-
-    factors = factors[order]  
-    rates = rates[order]  
+    sort_order = np.argsort(all_indices)
+    factors = factors[sort_order]  
+    rates = rates[sort_order]  
 
     print(f'factors shape: {factors.shape}')
     print(f'rates shape: {rates.shape}')
 
-    Stiched rates on one plot from electrodes 
+    # Stiched rates on one plot from electrodes 
     recordings = rates.reshape(-1, rates.shape[2]) 
     print(f'recordings shape: {recordings.shape}')
 
     curr_path = Path.cwd()
-    savemat(Path(f'{curr_path}/files/{base_name}_0_stitched_binned.mat'), {'data':recordings})
+    mat_file = Path(curr_path) / "files" / f"{base_name}_stitched_binned.mat"
+    print(f'mat_file: {mat_file}')
+    savemat(mat_file, {'data': recordings})
+
 
     np.save(data_file, recordings)
 
@@ -228,13 +225,7 @@ def ipi_distribution(ipis, visualizations_folder):
 
 if __name__ == '__main__':
     current_path = Path.cwd()
-    base_name = 'd73_r000_wD4_12s'
-
-    # save folders
-    visualizations_folder = Path(f'{current_path}/visualizations/{base_name}')
-    files_folder = Path(f'{current_path}/files')
-    os.makedirs(visualizations_folder, exist_ok=True)
-    os.makedirs(files_folder, exist_ok=True)
+    base_name = 'd73_r000_wA3_12s'
 
     # parameters
     bin_size = 0.005
@@ -246,9 +237,16 @@ if __name__ == '__main__':
     output_file = current_path.parent / "data" / f"lfads_output_{base_name}.h5"
     train_indices = current_path.parent / "data"/ f"train_indices_{base_name}.npy"
     valid_indices = current_path.parent / "data"/ f"valid_indices_{base_name}.npy"
+
+    # save folders
+    visualizations_folder = Path(f'{current_path}/visualizations/{base_name}')
+    files_folder = Path(f'{current_path}/files')
+    os.makedirs(visualizations_folder, exist_ok=True)
+    os.makedirs(files_folder, exist_ok=True)
     
     # make data file
     data_file = Path(f'{files_folder}/lfads_rates_recordings_{base_name}.npy')
+    print(f'data file: {data_file}')
     if not data_file.exists():
         if Path(output_file).exists():
             print("Generating data_file from output_file...")
@@ -263,9 +261,9 @@ if __name__ == '__main__':
         raise Exception('Time axis not close to correct duration')
 
     # parameters: do which functions
-    do_detect_all_channel_peaks = False
+    do_detect_all_channel_peaks = True
     do_make_detect_peaks_figs = True
-    do_aligned_peaks = False
+    do_aligned_peaks = True
 
     if do_detect_all_channel_peaks:
         ipis = {}
