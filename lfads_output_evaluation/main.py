@@ -4,18 +4,11 @@ import scipy as sp
 import os
 import h5py 
 from pathlib import Path
-from scipy.stats import norm
+from scipy import stats 
 from scipy.io import savemat
 import sys
-
-def calculate_threshold(curr_channel_data):
-    median_val = np.median(curr_channel_data)
-    absolute_deviations = np.abs(curr_channel_data - median_val)
-    mad = np.median(absolute_deviations)
-    stdev = mad / 0.6745
-    threshold = 4 * stdev
-
-    return threshold
+import pandas as pd
+import seaborn as sns
 
 def prepare_output(lfads_output, train_indices, valid_indices, data_file, bin_size, overlap):
     drop_bins = int(overlap/bin_size)
@@ -68,11 +61,13 @@ def set_up(data, channel_num_idx, t_axis):
     other_data = np.delete(data, channel_num_idx, axis=1)
     # peak_inds = sp.signal.find_peaks(ref_data, prominence=30)[0]
 
-    threshold = calculate_threshold(ref_data)
-    peak_inds = sp.signal.find_peaks(ref_data, width=6, prominence=5)[0]
+    # peak_inds, properties = sp.signal.find_peaks(ref_data, height=6, prominence=6)
+    peak_inds, properties = sp.signal.find_peaks(ref_data, height=75, prominence=6)
+
+    peak_heights = properties['peak_heights']
     IPIs = np.diff(t_axis[peak_inds])  # same units as t_axis
 
-    return ref_data, other_data, peak_inds, IPIs, threshold
+    return ref_data, other_data, peak_inds, IPIs, peak_heights
 
 
 def channel_mapping_indices_to_actual(channel_num_idx):
@@ -80,14 +75,15 @@ def channel_mapping_indices_to_actual(channel_num_idx):
     # return channel_num_idx
 
 
-def make_detect_peaks_figs(ref_data, peak_inds, IPIs, threshold, channel_num_idx, t_axis, visualizations_folder):
+def make_detect_peaks_figs(ref_data, peak_inds, IPIs, channel_num_idx, t_axis, visualizations_folder):
     # Plot rate trace with peaks
     plt.figure()
     plt.plot(t_axis, ref_data, 'b')
     plt.plot(t_axis[peak_inds], ref_data[peak_inds], 'ro')
-    plt.suptitle(f'Channel {channel_mapping_indices_to_actual(channel_num_idx)} \n height threshold: {threshold:.3f}')
+    plt.suptitle(f'Channel {channel_mapping_indices_to_actual(channel_num_idx)}')
     plt.xlabel('Time (sec)')
     plt.ylabel('Rate (Hz)')
+    # plt.ylim([0, 500])
     plt.ylim([0, 350])
     
     # if channel_mapping_indices_to_actual(channel_num_idx) == '41':
@@ -98,42 +94,79 @@ def make_detect_peaks_figs(ref_data, peak_inds, IPIs, threshold, channel_num_idx
     plt.savefig(Path(f'{specific_save_folder}/peaks_ipis_{channel_mapping_indices_to_actual(channel_num_idx)}.png'))
     plt.close()
 
-    if len(IPIs) > 0:
-        # Overlay histogram
-        plt.figure(1)
-        plt.hist(IPIs, bins=np.arange(0, 30, 0.5), alpha=0.4, 
-                    label=f'Ch {channel_mapping_indices_to_actual(channel_num_idx)}')
-        plt.ylim([0, 20])
-        plt.title(f'Histogram of Channel {channel_mapping_indices_to_actual(channel_num_idx)}')
-        plt.xlabel('Inter-peak Intervals (s)')
-        plt.ylabel('Counts')
-        specific_save_folder = Path(f'{visualizations_folder}/ipi_histogram')
-        os.makedirs(specific_save_folder, exist_ok=True)
-        plt.savefig(Path(f'{specific_save_folder}/ipi_histogram_{channel_mapping_indices_to_actual(channel_num_idx)}.png'))
-        plt.close()
+    
+    # Overlay histogram
+    plt.figure(1)
+    plt.hist(IPIs, bins=np.arange(0, 30, 0.5), alpha=0.4, 
+                label=f'Ch {channel_mapping_indices_to_actual(channel_num_idx)}')
+    plt.ylim([0, 20])
+    plt.title(f'Histogram of Channel {channel_mapping_indices_to_actual(channel_num_idx)}')
+    plt.xlabel('Inter-peak Intervals (s)')
+    plt.ylabel('Counts')
+    specific_save_folder = Path(f'{visualizations_folder}/ipi_histogram')
+    os.makedirs(specific_save_folder, exist_ok=True)
+    plt.savefig(Path(f'{specific_save_folder}/ipi_histogram_{channel_mapping_indices_to_actual(channel_num_idx)}.png'))
+    plt.close()
 
-        # Overlay histogram
-        plt.figure(2)
-        bins=np.arange(0, 30, 0.5)
-        plt.hist(IPIs, bins, alpha=0.4, 
-                    label=f'Ch {channel_mapping_indices_to_actual(channel_num_idx)}')
-        mu, sigma = norm.fit(IPIs)
-        # Generate x values for the fitted curve
-        xmin, xmax = plt.xlim()
-        x = np.linspace(xmin, xmax, 100)
-        # Calculate the PDF of the fitted Gaussian
-        p = norm.pdf(x, mu, sigma)
-        # Plot the fitted curve
-        bin_width = np.diff(bins)[0]
-        p_counts = norm.pdf(x, mu, sigma) * len(IPIs) * bin_width
-        plt.plot(x, p_counts, 'k', linewidth=2, label=...)
-        plt.suptitle(f'Normalized Histogram of Channel {channel_mapping_indices_to_actual(channel_num_idx)}, \nmean: {mu}, stdev: {sigma}')
-        plt.xlabel('Inter-peak Intervals (s)')
-        plt.ylabel('Counts')
-        specific_save_folder = Path(f'{visualizations_folder}/gaussian_ipi_histogram')
-        os.makedirs(specific_save_folder, exist_ok=True)
-        plt.savefig(Path(f'{specific_save_folder}/gaussian_ipi_histogram_{channel_mapping_indices_to_actual(channel_num_idx)}.png'))
-        plt.close()
+    # Overlay histogram
+    plt.figure(2)
+    bins=np.arange(0, 30, 0.5)
+    plt.hist(IPIs, bins, alpha=0.4, 
+                label=f'Ch {channel_mapping_indices_to_actual(channel_num_idx)}')
+    mu, sigma = stats.norm.fit(IPIs)
+    # Generate x values for the fitted curve
+    xmin, xmax = plt.xlim()
+    x = np.linspace(xmin, xmax, 100)
+    # Calculate the PDF of the fitted Gaussian
+    p = stats.norm.pdf(x, mu, sigma)
+    # Plot the fitted curve
+    bin_width = np.diff(bins)[0]
+    p_counts = stats.norm.pdf(x, mu, sigma) * len(IPIs) * bin_width
+    plt.plot(x, p_counts, 'k', linewidth=2, label=...)
+    plt.suptitle(f'Normalized Histogram of Channel {channel_mapping_indices_to_actual(channel_num_idx)}, \nmean: {mu:.3f}, stdev: {sigma:.3f}')
+    plt.xlabel('Inter-peak Intervals (s)')
+    plt.ylabel('Counts')
+    specific_save_folder = Path(f'{visualizations_folder}/gaussian_ipi_histogram')
+    os.makedirs(specific_save_folder, exist_ok=True)
+    plt.savefig(Path(f'{specific_save_folder}/gaussian_ipi_histogram_{channel_mapping_indices_to_actual(channel_num_idx)}.png'))
+    plt.close()
+
+
+def make_peak_histograms(peak_heights, channel_num_idx, visualizations_folder):
+    bin_width = 30
+    min_data = 0
+    max_data = 500
+    # bin_width = 12
+    # min_data = 0
+    # max_data = 250
+    
+
+    bins = np.arange(min_data, max_data, bin_width)
+
+    plt.figure()
+    plt.hist(peak_heights, bins=bins, alpha=0.4, 
+                label=f'Ch {channel_mapping_indices_to_actual(channel_num_idx)}')
+    plt.ylim([0, 35])
+    # plt.ylim([0, 150])
+
+    plt.xlabel('Rate amplitude (Hz)')
+    plt.ylabel('Count')
+    
+    ax = plt.gca()    
+    # Plot KDE on the same axes
+    ax2 = ax.twinx()  # Create a second y-axis for the KDE
+    sns.kdeplot(peak_heights, ax=ax2, color='red', linewidth=2, label='KDE')
+    ax2.set_ylabel('Density', color='red')
+    ax2.tick_params(axis='y', labelcolor='red')
+    ax2.set_ylim([0, None])  # Start from 0
+    
+    plt.legend(loc='upper right')
+    plt.title(f'Amplitude Histogram of Channel {channel_mapping_indices_to_actual(channel_num_idx)} with KDE')
+
+    specific_save_folder = Path(f'{visualizations_folder}/peak_histogram')
+    os.makedirs(specific_save_folder, exist_ok=True)
+    plt.savefig(Path(f'{specific_save_folder}/peak_histogram_{channel_mapping_indices_to_actual(channel_num_idx)}.png'))
+    plt.close()
 
 def aligned_ensemble(ref_data, other_data, peak_inds, channel_num_idx, win_width, bin_size, visualizations_folder):
     # win_width is number of samples
@@ -225,13 +258,19 @@ def ipi_distribution(ipis, visualizations_folder):
 
 if __name__ == '__main__':
     current_path = Path.cwd()
-    base_name = 'd73_r000_wA3_12s'
+    base_name = 'd73_r000_wD4_12s'
 
     # parameters
     bin_size = 0.005
     expected_end_time = 900.0
     win_width = 400 # for aligned ensemble
     overlap = 2 # 2 second overlap when binning, included in sample_len
+
+    # parameters: do which functions
+    do_detect_all_channel_peaks = True
+    do_make_detect_peaks_figs = False
+    do_aligned_peaks = False
+    do_make_peak_histograms = False
 
     # Assumes shape (num_recording, num_samples, num_channels)
     output_file = current_path.parent / "data" / f"lfads_output_{base_name}.h5"
@@ -260,10 +299,6 @@ if __name__ == '__main__':
     if np.abs(t_axis[-1] - expected_end_time) > 2*bin_size:
         raise Exception('Time axis not close to correct duration')
 
-    # parameters: do which functions
-    do_detect_all_channel_peaks = True
-    do_make_detect_peaks_figs = True
-    do_aligned_peaks = True
 
     if do_detect_all_channel_peaks:
         ipis = {}
@@ -271,21 +306,25 @@ if __name__ == '__main__':
         if not do_make_detect_peaks_figs:
             do_make_detect_peaks_figs = True
 
-    if do_make_detect_peaks_figs or do_aligned_peaks:
+    if do_make_detect_peaks_figs or do_aligned_peaks or do_make_peak_histograms:
         for channel_num_idx in range(data.shape[1]):
-            ref_data, other_data, peak_inds, IPIs, threshold = set_up(data, channel_num_idx, t_axis)
+            ref_data, other_data, peak_inds, IPIs, peak_heights = set_up(data, channel_num_idx, t_axis)
             if do_detect_all_channel_peaks:
                 ipis[channel_num_idx] = IPIs
 
-            if do_make_detect_peaks_figs:
-                make_detect_peaks_figs(ref_data, peak_inds, IPIs, threshold, channel_num_idx, t_axis, visualizations_folder)
-            if do_aligned_peaks and len(IPIs) > 0:
-                aligned_ensemble(ref_data, other_data, peak_inds, channel_num_idx, win_width, bin_size, visualizations_folder)
-    
+            if len(IPIs) > 0:
+                if do_make_detect_peaks_figs:
+                    make_detect_peaks_figs(ref_data, peak_inds, IPIs, channel_num_idx, t_axis, visualizations_folder)
+                    
+                if do_aligned_peaks:
+                    aligned_ensemble(ref_data, other_data, peak_inds, channel_num_idx, win_width, bin_size, visualizations_folder)
+
+                if do_make_peak_histograms:
+                    make_peak_histograms(peak_heights, channel_num_idx, visualizations_folder)
+
     if do_detect_all_channel_peaks:
         try:
             if ipis is not None:
                ipi_distribution(ipis, visualizations_folder)           
         except:
             pass
-

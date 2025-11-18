@@ -3,24 +3,8 @@ import glob as glob
 from pathlib import Path
 import h5py, os, re
 import sys
-
-
-file = '/oscar/data/slizarra/emohanra/waveformVariability_rerun/bin_files/20250502_NIN_B1_D73_and_NIN_B4_D59/000/20250502_NIN-B1 D73 and NIN-B4 D59(000)_D4.bin'
-file = Path(file)
-
-num_channels = 16
-fs = 50000
-
-# PARAMETERS 
-bin_size = 0.005  # seconds per bin
-sample_len = 12  # sample len in s
-overlap = 2 # 2 second overlap when binning, included in sample_len
-split_frac = 0.75 # train - test split
-DEBUG = False
-
-recording_duration = 15 * 60 # seconds (force 15 min)
-
-print(f'{sample_len} seconds per sample')
+from scipy.io import savemat
+import pandas as pd
 
 def extract_threshold_waveforms(signal, threshold, fs):
     """
@@ -66,6 +50,7 @@ def extract_threshold_waveforms(signal, threshold, fs):
 
     return waveforms, crossing_times
 
+
 def calculate_threshold(curr_channel_data):
     median_val = np.median(curr_channel_data)
     absolute_deviations = np.abs(curr_channel_data - median_val)
@@ -75,7 +60,8 @@ def calculate_threshold(curr_channel_data):
 
     return threshold
 
-def extract_info_from_bin_file(bin_file, output_dir):
+
+def extract_info_from_bin_file(bin_file):
     """Extract day, recording number, and well from bin file path and name"""
     bin_path = Path(bin_file)
     bin_name = bin_path.name
@@ -100,10 +86,8 @@ def extract_info_from_bin_file(bin_file, output_dir):
     recording = rec_match.group(1)
     
     filename = f'd{day}_r{recording}_w{well}'
-    out_path = Path(f'{output_dir} / {filename}.h5')
-    # os.makedirs(output_dir, exist_ok=True)
 
-    return out_path, filename
+    return filename
 
 
 def bin_data(data, num_channels, recording_duration, fs, sample_len, bin_size, overlap):
@@ -136,9 +120,12 @@ def bin_data(data, num_channels, recording_duration, fs, sample_len, bin_size, o
     stride = window_size - overlap
 
     # Window start times: first at -overlap, last ends at recording_duration
-    window_starts = np.arange(-overlap, recording_duration, stride)[:-1]
+    # Use a more precise calculation to avoid floating point errors
+    n_windows = int(np.floor((recording_duration + overlap) / stride))
+    window_starts = np.array([-overlap + i * stride for i in range(n_windows)])
     if DEBUG:
         print(f'window starts {window_starts}')
+        print(f'n_timesteps: {n_timesteps}, window_size: {window_size}, stride: {stride}')
 
     n_trials = len(window_starts)
 
@@ -164,53 +151,373 @@ def bin_data(data, num_channels, recording_duration, fs, sample_len, bin_size, o
                 continue
 
             relative_times = spikes_in_window - start_time
-            bin_indices = np.floor(relative_times / bin_size).astype(int)
+            # Use more precise binning to avoid floating point errors
+            # Round to avoid precision issues, then floor to ensure consistent binning
+            # across overlapping windows
+            bin_indices = np.floor(np.round(relative_times / bin_size, decimals=10)).astype(int)
+            # Clamp bin indices to valid range [0, n_timesteps)
+            bin_indices = np.clip(bin_indices, 0, n_timesteps - 1)
             np.add.at(binned_trials[i, :, ch], bin_indices, 1)
 
     return binned_trials
 
 
-#Prep output paths
-output_dir = Path.cwd()
-out_path, filename = extract_info_from_bin_file(file, output_dir)
+def validate_bin_data(binned_trials, data, num_channels, recording_duration, fs, sample_len, bin_size, overlap):
+    """
+    Validate that bin_data was performed correctly.
+    
+    Parameters
+    ----------
+    binned_trials : array, shape (n_trials, n_timesteps, num_channels)
+        Output from bin_data function
+    data : array, shape (samples, channels)
+        Original raw data
+    num_channels : int
+    recording_duration : float
+    fs : float
+    sample_len : float
+    bin_size : float
+    overlap : float
+    
+    Returns
+    -------
+    is_valid : bool
+        True if all checks pass
+    """
+    print("\n" + "="*60)
+    print("VALIDATING bin_data OUTPUT")
+    print("="*60)
+    
+    all_checks_passed = True
+    
+    # Expected dimensions
+    n_timesteps = int(np.round(sample_len / bin_size))
+    window_size = n_timesteps * bin_size
+    stride = window_size - overlap
+    n_windows = int(np.floor((recording_duration + overlap) / stride))
+    window_starts = np.array([-overlap + i * stride for i in range(n_windows)])
+    
+    # Check 1: Output shape
+    expected_shape = (n_windows, n_timesteps, num_channels)
+    actual_shape = binned_trials.shape
+    print(f"\n1. Shape check:")
+    print(f"   Expected: {expected_shape}")
+    print(f"   Actual:   {actual_shape}")
+    if actual_shape == expected_shape:
+        print("   ✓ PASSED")
+    else:
+        print("   ✗ FAILED")
+        all_checks_passed = False
+    
+    # Check 2: No negative values
+    min_val = np.min(binned_trials)
+    print(f"\n2. Non-negative values check:")
+    print(f"   Minimum value: {min_val}")
+    if min_val >= 0:
+        print("   ✓ PASSED")
+    else:
+        print("   ✗ FAILED: Found negative spike counts!")
+        all_checks_passed = False
+    
+    # Check 3: Bin indices within valid range
+    # This is already handled in bin_data, but verify no values exceed expected
+    max_bin_val = np.max(binned_trials)
+    print(f"\n3. Reasonable spike count check:")
+    print(f"   Maximum spikes per bin: {max_bin_val}")
+    print(f"   Mean spikes per bin: {np.mean(binned_trials):.4f}")
+    print(f"   Total spikes across all bins: {np.sum(binned_trials):.0f}")
+    if max_bin_val < 1000:  # Reasonable upper bound
+        print("   ✓ PASSED (max value seems reasonable)")
+    else:
+        print("   ⚠ WARNING: Very high spike counts detected")
+    
+    # Check 4: Window coverage
+    print(f"\n4. Window coverage check:")
+    print(f"   Number of windows: {n_windows}")
+    print(f"   First window start: {window_starts[0]:.4f} s")
+    print(f"   Last window start: {window_starts[-1]:.4f} s")
+    print(f"   Last window end: {window_starts[-1] + window_size:.4f} s")
+    print(f"   Recording duration: {recording_duration:.4f} s")
+    last_window_end = window_starts[-1] + window_size
+    if abs(last_window_end - recording_duration) < 0.1:  # Allow small floating point error
+        print("   ✓ PASSED")
+    else:
+        print(f"   ⚠ WARNING: Last window ends at {last_window_end:.4f}s, expected {recording_duration:.4f}s")
+    
+    # Check 5: Overlap consistency (if overlap > 0)
+    if overlap > 0:
+        print(f"\n5. Overlap consistency check:")
+        overlap_bins = int(overlap / bin_size)
+        print(f"   Overlap: {overlap} s ({overlap_bins} bins)")
+        
+        n_mismatches = 0
+        for i in range(n_windows - 1):
+            # Check if consecutive windows overlap
+            window_i_end = window_starts[i] + window_size
+            window_i1_start = window_starts[i + 1]
+            
+            if window_i_end > window_i1_start:  # They overlap
+                # Get overlapping regions
+                overlap_start_bin = int(np.round((window_i1_start - window_starts[i]) / bin_size))
+                overlap_end_bin = overlap_start_bin + overlap_bins
+                
+                chunk_i_end = binned_trials[i, overlap_start_bin:overlap_end_bin, :]
+                chunk_i1_start = binned_trials[i + 1, :overlap_bins, :]
+                
+                if not np.array_equal(chunk_i_end, chunk_i1_start):
+                    n_mismatches += 1
+                    if n_mismatches <= 3:  # Only show first few mismatches
+                        n_diff = np.sum(chunk_i_end != chunk_i1_start)
+                        print(f"   ⚠ Mismatch between windows {i} and {i+1}: {n_diff} bins differ")
+        
+        if n_mismatches == 0:
+            print("   ✓ PASSED: All overlapping regions match")
+        else:
+            print(f"   ⚠ WARNING: {n_mismatches} window pairs have mismatched overlaps")
+            print("   (This may be expected if spike detection varies slightly)")
+    
+    # Check 6: Compare total spike counts with direct detection
+    print(f"\n6. Spike count preservation check:")
+    total_spikes_binned = np.sum(binned_trials)
+    
+    # Detect spikes directly from data (same method as bin_data)
+    total_spikes_direct = 0
+    for ch in range(num_channels):
+        x = data[:, ch]
+        threshold = calculate_threshold(x)
+        _, spike_times = extract_threshold_waveforms(x, threshold, fs)
+        # Count spikes within recording duration
+        spikes_in_range = np.sum((spike_times >= 0) & (spike_times < recording_duration))
+        total_spikes_direct += spikes_in_range
+    
+    print(f"   Total spikes in binned data: {total_spikes_binned:.0f}")
+    print(f"   Total spikes detected directly: {total_spikes_direct:.0f}")
+    
+    if overlap > 0:
+        # With overlap, spikes can be counted multiple times
+        # Estimate expected count: each spike in overlap region is counted twice
+        expected_with_overlap = total_spikes_direct
+        # Rough estimate: spikes in overlap regions are double-counted
+        overlap_ratio = overlap / stride if stride > 0 else 0
+        expected_with_overlap = total_spikes_direct * (1 + overlap_ratio)
+        print(f"   Expected with overlap (approx): {expected_with_overlap:.0f}")
+        print("   ✓ PASSED (overlap causes double-counting, so counts won't match exactly)")
+    else:
+        if abs(total_spikes_binned - total_spikes_direct) < 0.01 * total_spikes_direct:
+            print("   ✓ PASSED")
+        else:
+            diff_pct = 100 * abs(total_spikes_binned - total_spikes_direct) / total_spikes_direct
+            print(f"   ⚠ WARNING: {diff_pct:.2f}% difference (may be due to edge effects)")
+    
+    # Check 7: Data statistics
+    print(f"\n7. Data statistics:")
+    print(f"   Non-zero bins: {np.count_nonzero(binned_trials)} / {binned_trials.size} ({100*np.count_nonzero(binned_trials)/binned_trials.size:.2f}%)")
+    print(f"   Mean spikes per bin (non-zero): {np.mean(binned_trials[binned_trials > 0]):.4f}")
+    print(f"   Max spikes in single bin: {np.max(binned_trials)}")
+    
+    print("\n" + "="*60)
+    if all_checks_passed:
+        print("✓ ALL CRITICAL CHECKS PASSED")
+    else:
+        print("✗ SOME CHECKS FAILED - REVIEW WARNINGS ABOVE")
+    print("="*60 + "\n")
+    
+    return all_checks_passed
 
-# Load bin file
-data = np.memmap(file, dtype='float32', mode='r')
-data = data.reshape((num_channels, len(data)//num_channels), order='F').T #shape (num_samples, num_channels)
-print(f'data shape: {data.shape}')
 
-binned_trials = bin_data(data, num_channels, recording_duration, fs, sample_len, bin_size, overlap)
+def stitch_data(binned_h5, train_indices, valid_indices, bin_size, overlap):
+    #stitches the data back in order
+    drop_bins = int(overlap/bin_size)
+    print(f'drop bins: {drop_bins}')
+    # Inputs
+    train_idx = np.load(train_indices)
+    valid_idx = np.load(valid_indices)
 
-# Train-val split
-# Randomized train/valid split with index tracking
-n_sessions = binned_trials.shape[0]
-indices = np.arange(n_sessions)
+    with h5py.File(binned_h5, "r") as f:
+        base_name = os.path.splitext(os.path.basename(f.filename))[0]
+        train_encod_data = f["train_encod_data"][:, drop_bins:, :] 
+        valid_encod_data = f["valid_encod_data"][:, drop_bins:, :] 
 
-# Shuffle indices reproducibly
-rng = np.random.default_rng(seed=0)
-rng.shuffle(indices)
+        train_encod_data_check = f["train_encod_data"][:, 0:, :] 
+        valid_encod_data_check = f["valid_encod_data"][:, 0:, :] 
 
-# Compute split point
-split_point = int(n_sessions * split_frac)
+    # Combine back in original order
+    n_sessions = len(train_idx) + len(valid_idx)
 
-# Split into train and validation indices
-train_idx = indices[:split_point]
-valid_idx = indices[split_point:]
+    # Combine indices and data in the same order
+    all_indices = np.concatenate([train_idx, valid_idx])
 
-# Slice data
-train_data = binned_trials[train_idx]
-valid_data = binned_trials[valid_idx]
+    all_data = np.concatenate([train_encod_data, valid_encod_data], axis=0)
+    if overlap:
+        all_data_check = np.concatenate([train_encod_data_check, valid_encod_data_check], axis=0)
 
-# Save index lists for later reconstruction
-np.save(f"{output_dir}/train_indices_{filename}.npy", train_idx)
-np.save(f"{output_dir}/valid_indices_{filename}.npy", valid_idx)
+    # Sort by indices to restore original order
+    sort_order = np.argsort(all_indices)
+    data = all_data[sort_order]  
+    if overlap:
+        file_is_ok = True
 
-print(f"Train shape: {train_data.shape}, Valid shape: {valid_data.shape}")
-print(f"Saved index lists for reconstruction.")
+        data_check = all_data_check[sort_order]  
+        sorted_indices = all_indices[sort_order]
 
-with h5py.File(out_path, "w") as f:
-    f.create_dataset("train_encod_data", data=train_data)
-    f.create_dataset("train_recon_data", data=train_data)
-    f.create_dataset("valid_encod_data", data=valid_data)
-    f.create_dataset("valid_recon_data", data=valid_data)
+        print(f'data shape: {data.shape}')
+        print(f'data_check shape: {data_check.shape}')
+        print(f'Sorted indices (first 10): {sorted_indices[:10]}')
+        if {np.all(np.diff(sorted_indices) == 1)}:
+            file_is_ok = False
+            
+        print(f'Checking if indices are consecutive: {np.all(np.diff(sorted_indices) == 1)}')
+        
+        # Verify overlap regions match for consecutive chunks
+        overlap_bins = int(overlap / bin_size)
+        print(f'\nVerifying overlap regions (overlap_bins={overlap_bins})...')
+        for i in range(len(data_check)-1):
+            chunk_i_end = data_check[i, -overlap_bins:, :]
+            chunk_i1_start = data_check[i+1, :overlap_bins, :]
+            if np.array_equal(chunk_i_end, chunk_i1_start):
+                pass
+                # print(f'  Chunks {i} and {i+1} (indices {sorted_indices[i]} and {sorted_indices[i+1]}): overlap matches ✓')
+            else:
+                n_mismatch = np.sum(chunk_i_end != chunk_i1_start)
+                total_elements = chunk_i_end.size
+                mismatch_pct = 100 * n_mismatch / total_elements
+                print(f'  Chunks {i} and {i+1} (indices {sorted_indices[i]} and {sorted_indices[i+1]}): {n_mismatch} mismatches ({mismatch_pct:.4f}%) ✗')
+                
+                if sorted_indices[i+1] - sorted_indices[i] != 1:
+                    file_is_ok = False
+                    print(f'    WARNING: These chunks are NOT consecutive in original order!')
+                
+                # Detailed analysis of mismatches
+                if n_mismatch > 0:
+                    diff_mask = chunk_i_end != chunk_i1_start
+                    diff_values = chunk_i_end[diff_mask] - chunk_i1_start[diff_mask]
+                    
+                    # Find positions of mismatches
+                    mismatch_positions = np.where(diff_mask)
+                    
+                    print(f'    Mismatch details:')
+                    print(f'      Total elements in overlap: {total_elements} ({overlap_bins} bins × {chunk_i_end.shape[1]} channels)')
+                    print(f'      Absolute differences: min={np.abs(diff_values).min():.6f}, max={np.abs(diff_values).max():.6f}, mean={np.abs(diff_values).mean():.6f}')
+                    print(f'      Signed differences: min={diff_values.min():.6f}, max={diff_values.max():.6f}, mean={diff_values.mean():.6f}')
+                    
+                    # Show first few mismatches with their positions and values
+                    n_show = min(10, n_mismatch)
+                    print(f'      First {n_show} mismatches:')
+                    for idx in range(n_show):
+                        bin_idx = mismatch_positions[0][idx]
+                        ch_idx = mismatch_positions[1][idx]
+                        val_i = chunk_i_end[bin_idx, ch_idx]
+                        val_i1 = chunk_i1_start[bin_idx, ch_idx]
+                        print(f'        Bin {bin_idx}, Channel {ch_idx}: chunk{i}={val_i:.6f}, chunk{i+1}={val_i1:.6f}, diff={val_i-val_i1:.6f}')
+                    
+                    # Check if differences are systematic (all same sign) or random
+                    if np.all(diff_values > 0):
+                        print(f'      Pattern: All mismatches are positive (chunk {i} > chunk {i+1})')
+                    elif np.all(diff_values < 0):
+                        print(f'      Pattern: All mismatches are negative (chunk {i} < chunk {i+1})')
+                    else:
+                        print(f'      Pattern: Mixed signs (not systematic)')
+                    
+                    # Check magnitude relative to typical values
+                    if chunk_i_end.size > 0:
+                        typical_val = np.median(np.abs(chunk_i_end[chunk_i_end != 0])) if np.any(chunk_i_end != 0) else 1.0
+                        max_rel_diff = np.abs(diff_values).max() / typical_val if typical_val > 0 else np.abs(diff_values).max()
+                        print(f'      Max relative difference: {max_rel_diff:.4f}x typical value')
+    return file_is_ok
 
+    # return data_check
+    # # Stitch time axis
+    # data_stitched = data.reshape(-1, data.shape[-1])
+    
+    # #save the files
+    # output_file = f'{base_name}_binned'
+    # # np.save(f'{output_file}.npy', data)
+    # savemat(files_folder / f"{output_file}_stitched.mat", {'data':data_stitched})
+    # print(f"saved {output_file}_stitched.mat")
+    # if overlap:
+    #     savemat(files_folder / f"{output_file}_check.mat", {'data':data_check})
+    #     print(f"saved {output_file}_check.mat")
+
+
+if __name__ == '__main__':
+    import argparse
+    parser = argparse.ArgumentParser(description="Run LFADS on multiple bin files")
+    parser.add_argument("-b", "--bin_files_csv", type=str, help="full path to .csv file of the .bin file paths to run LFADS on, column should be called be path, each line should be a full path to bin file")
+    parser.add_argument("-l", "--lfads_dir", type=str, help="full file path to lfads-torch directory")
+    args = parser.parse_args()
+
+    # process args
+    files = pd.read_csv(args.bin_files_csv)['path'].tolist()
+    lfads_datasets_path = f'{args.lfads_dir}/datasets'
+
+    num_channels = 16
+    fs = 50000
+    # PARAMETERS 
+    bin_size = 0.005  # seconds per bin
+    sample_len = 12  # sample len in s
+    overlap = 2 # 2 second overlap when binning, included in sample_len
+    split_frac = 0.75 # train - test split
+    DEBUG = False
+    recording_duration = 15 * 60 # seconds (force 15 min)
+    print(f'{sample_len} seconds per sample')
+
+    for file in files:
+        file = Path(file)
+        print(f'Processing {file}')
+
+        #Prep output paths
+        output_dir = Path.cwd()
+        filename = extract_info_from_bin_file(file)
+        os.makedirs(f'{output_dir}/lfads_other_files', exist_ok=True)
+        os.makedirs(f'{output_dir}/lfads_other_files/{filename}', exist_ok=True)
+        train_indices = f"{output_dir}/lfads_other_files/{filename}_indices/train_indices_{filename}.npy"
+        valid_indices = f"{output_dir}/lfads_other_files/{filename}_indices/valid_indices_{filename}.npy"
+        mat_file = f"{output_dir}/lfads_other_files/{filename}_indices/{filename}_raw_data.mat"
+
+        # Load bin file
+        data = np.memmap(file, dtype='float32', mode='r')
+        data = data.reshape((num_channels, len(data)//num_channels), order='F').T #shape (num_samples, num_channels)
+        savemat(mat_file, {'data': data})
+        print(f'data shape: {data.shape}')
+
+        binned_trials = bin_data(data, num_channels, recording_duration, fs, sample_len, bin_size, overlap)
+
+        # Validate binning was done correctly
+        validate_bin_data(binned_trials, data, num_channels, recording_duration, fs, sample_len, bin_size, overlap)
+
+        # Train-val split
+        # Randomized train/valid split with index tracking
+        n_sessions = binned_trials.shape[0]
+        indices = np.arange(n_sessions)
+
+        # Shuffle indices reproducibly
+        rng = np.random.default_rng(seed=0)
+        rng.shuffle(indices)
+
+        # Compute split point
+        split_point = int(n_sessions * split_frac)
+
+        # Split into train and validation indices
+        train_idx = indices[:split_point]
+        valid_idx = indices[split_point:]
+
+        # Slice data
+        train_data = binned_trials[train_idx]
+        valid_data = binned_trials[valid_idx]
+
+        # Save index lists for later reconstruction
+        np.save(train_indices, train_idx)
+        np.save(valid_indices, valid_idx)
+
+        print(f"Train shape: {train_data.shape}, Valid shape: {valid_data.shape}")
+        print(f"Saved index lists for reconstruction.")
+
+        with h5py.File(out_path, "w") as f:
+            f.create_dataset("train_encod_data", data=train_data)
+            f.create_dataset("train_recon_data", data=train_data)
+            f.create_dataset("valid_encod_data", data=valid_data)
+            f.create_dataset("valid_recon_data", data=valid_data)
+
+        
+        if not stitch_data(out_path, train_indices, valid_indices, bin_size, overlap):
+            print(f'Check warnings for {file}')
