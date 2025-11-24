@@ -258,13 +258,17 @@ def ipi_distribution(ipis, visualizations_folder):
 
 if __name__ == '__main__':
     current_path = Path.cwd()
-    base_name = 'd73_r000_wD4_12s'
+    # base_name = 'toy_data_samp_size_120'
+    # base_name = 'toy_data_samp_size_100_l0_1'
+    base_name = 'toy_data_samp_size_120_l0_1'
+    # base_name = 'd73_r000_wD4_12s'
 
     # parameters
     bin_size = 0.005
     expected_end_time = 900.0
     win_width = 400 # for aligned ensemble
-    overlap = 2 # 2 second overlap when binning, included in sample_len
+    # overlap = 0
+    overlap = 0.1 # 2 second overlap when binning, included in sample_len
 
     # parameters: do which functions
     do_detect_all_channel_peaks = True
@@ -276,7 +280,16 @@ if __name__ == '__main__':
     output_file = current_path.parent / "data" / f"lfads_output_{base_name}.h5"
     train_indices = current_path.parent / "data"/ f"train_indices_{base_name}.npy"
     valid_indices = current_path.parent / "data"/ f"valid_indices_{base_name}.npy"
-
+    # output_file = '/Users/ellamohanram/Documents/GitHub/finding_latent_rates/lfads-torch/runs/toy_data_samp_size_120/2511201039_exampleSingle/lfads_output_toy_data_samp_size_120.h5'
+    # train_indices = '/Users/ellamohanram/Documents/GitHub/finding_latent_rates/data_inspection/files/train_indices_toy_120.npy'
+    # valid_indices = '/Users/ellamohanram/Documents/GitHub/finding_latent_rates/data_inspection/files/valid_indices_toy_120.npy'
+    # output_file = '/Users/ellamohanram/Documents/GitHub/finding_latent_rates/lfads-torch/runs/toy_data_samp_size_100_l0_1/2511201253_exampleSingle/lfads_output_toy_data_samp_size_100_ll0_1.h5'
+    # train_indices = '/Users/ellamohanram/Documents/GitHub/finding_latent_rates/data_inspection/files/train_indices_toy_ss100_l0_1.npy'
+    # valid_indices = '/Users/ellamohanram/Documents/GitHub/finding_latent_rates/data_inspection/files/valid_indices_toy_ss100_l0_1.npy'
+    output_file = '/Users/ellamohanram/Documents/GitHub/finding_latent_rates/lfads-torch/runs/toy_data_samp_size_120_l0_1/2511201256_exampleSingle/lfads_output_toy_data_samp_size_120_ll0_1.h5'
+    train_indices = '/Users/ellamohanram/Documents/GitHub/finding_latent_rates/data_inspection/files/train_indices_toy_ss120_l0_1.npy'
+    valid_indices = '/Users/ellamohanram/Documents/GitHub/finding_latent_rates/data_inspection/files/valid_indices_toy_ss120_l0_1.npy'
+    
     # save folders
     visualizations_folder = Path(f'{current_path}/visualizations/{base_name}')
     files_folder = Path(f'{current_path}/files')
@@ -296,6 +309,7 @@ if __name__ == '__main__':
     print(f'data shape: {data.shape}')
 
     t_axis = np.arange(0, data.shape[0]) * bin_size
+    print(f'time axis: {t_axis.shape}')
     if np.abs(t_axis[-1] - expected_end_time) > 2*bin_size:
         raise Exception('Time axis not close to correct duration')
 

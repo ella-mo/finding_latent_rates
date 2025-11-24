@@ -115,13 +115,13 @@ if __name__ == "__main__":
     files_folder = Path(f'{current_path}/files')
     os.makedirs(files_folder, exist_ok=True)
 
-    base_name =  "d73_r000_wA3_12s"
+    base_name =  "d73_r000_wD4_12s"
     data_file = current_path.parent / "data" / f"{base_name}.h5"
     train_indices = current_path.parent /"data"/ f"train_indices_{base_name}.npy"
     valid_indices = current_path.parent /"data"/  f"valid_indices_{base_name}.npy"
 
     bin_size = 0.005  # seconds per bin
-    overlap = 0 # 2 second overlap when binning, included in sample_len
+    overlap = 2 # 2 second overlap when binning, included in sample_len
 
     #RUN FUNCTIONS
     stitch_data(data_file, train_indices, valid_indices, files_folder, bin_size, overlap)
