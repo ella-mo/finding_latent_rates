@@ -9,51 +9,12 @@ from scipy.io import savemat
 import sys
 import pandas as pd
 import seaborn as sns
+# Add project root to Python path to allow importing data_functions
+_project_root = Path(__file__).parent.parent
+if str(_project_root) not in sys.path:
+    sys.path.insert(0, str(_project_root))
 
-def prepare_output(lfads_output, train_indices, valid_indices, data_file, bin_size, overlap):
-    drop_bins = int(overlap/bin_size)
-    print(f'drop bins: {drop_bins}')
-    train_idx = np.load(train_indices)
-    valid_idx = np.load(valid_indices)
-
-    # Regex matches the dates in the file names
-    with h5py.File(lfads_output) as f:
-        base_name = os.path.splitext(os.path.basename(f.filename))[0]
-        # Merge train and valid data for factors and rates
-        train_factors = f["train_factors"][:, drop_bins:, :] 
-        valid_factors = f["valid_factors"][:, drop_bins:, :] 
-        print(f'train factors shape: {train_factors.shape}, valid factors shape: {valid_factors.shape}')
-
-        train_rates = f["train_output_params"][:, drop_bins:, :]  / bin_size
-        valid_rates = f["valid_output_params"][:, drop_bins:, :]  / bin_size
-        print(f'train rate shape: {train_rates.shape}, valid rates shape: {valid_rates.shape} ')
-    
-    n_sessions = len(train_idx) + len(valid_idx)
-    all_indices = np.concatenate([train_idx, valid_idx])
-    
-    factors = np.concatenate([train_factors, valid_factors], axis=0)
-    rates = np.concatenate([train_rates, valid_rates], axis=0)
-
-    sort_order = np.argsort(all_indices)
-    factors = factors[sort_order]  
-    rates = rates[sort_order]  
-
-    print(f'factors shape: {factors.shape}')
-    print(f'rates shape: {rates.shape}')
-
-    # Stiched rates on one plot from electrodes 
-    recordings = rates.reshape(-1, rates.shape[2]) 
-    print(f'recordings shape: {recordings.shape}')
-
-    curr_path = Path.cwd()
-    mat_file = Path(curr_path) / "files" / f"{base_name}_stitched_binned.mat"
-    print(f'mat_file: {mat_file}')
-    savemat(mat_file, {'data': recordings})
-
-
-    np.save(data_file, recordings)
-
-    return factors, rates
+from data_functions import stitch_data
 
 
 def set_up(data, channel_num_idx, t_axis):
@@ -302,7 +263,7 @@ if __name__ == '__main__':
     if not data_file.exists():
         if Path(output_file).exists():
             print("Generating data_file from output_file...")
-            factors, rates = prepare_output(output_file, train_indices, valid_indices, data_file, bin_size, overlap)
+                stitch_data(data_file, "rates", train_indices, valid_indices, bin_size, overlap, files_folder)
         else:
             raise FileNotFoundError(f"Missing output_file: {output_file}")
     data = np.load(data_file)

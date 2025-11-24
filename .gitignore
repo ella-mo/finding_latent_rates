@@ -7,3 +7,4 @@ lfads_output_evaluation/files/
 lfads_output_evaluation/visualizations/
 lfads_output_evaluation/data/
 *.csv
+*.egg-info/
