@@ -130,7 +130,7 @@ def stitch_data(h5_file, h5_key, train_indices, valid_indices, bin_size, overlap
         data = data.reshape(-1, data.shape[2]) 
         print(f'data shape: {data.shape}')
 
-    mat_file = save_folder / "files" / f"{base_name}_{h5_key}_stitched_binned.mat"
+    mat_file = save_folder / f"{base_name}_{h5_key}_stitched_binned.mat"
     # Ensure the directory exists
     mat_file.parent.mkdir(parents=True, exist_ok=True)
     print(f'mat_file: {mat_file}')
