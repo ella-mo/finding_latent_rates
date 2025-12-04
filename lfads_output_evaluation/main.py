@@ -22,8 +22,8 @@ def set_up(data, channel_num_idx, t_axis):
     other_data = np.delete(data, channel_num_idx, axis=1)
     # peak_inds = sp.signal.find_peaks(ref_data, prominence=30)[0]
 
-    # peak_inds, properties = sp.signal.find_peaks(ref_data, height=6, prominence=6)
-    peak_inds, properties = sp.signal.find_peaks(ref_data, height=75, prominence=6)
+    ref_data_max = np.max(ref_data)
+    peak_inds, properties = sp.signal.find_peaks(ref_data, height=ref_data_max/2, prominence=ref_data_max/2)
 
     peak_heights = properties['peak_heights']
     IPIs = np.diff(t_axis[peak_inds])  # same units as t_axis
@@ -36,7 +36,7 @@ def channel_mapping_indices_to_actual(channel_num_idx):
     # return channel_num_idx
 
 
-def make_detect_peaks_figs(ref_data, peak_inds, IPIs, channel_num_idx, t_axis, visualizations_folder):
+def make_detect_peaks_figs(ref_data, peak_inds, IPIs, channel_num_idx, t_axis, visualizations_folder, max_rate_for_plot):
     # Plot rate trace with peaks
     plt.figure()
     plt.plot(t_axis, ref_data, 'b')
@@ -45,7 +45,7 @@ def make_detect_peaks_figs(ref_data, peak_inds, IPIs, channel_num_idx, t_axis, v
     plt.xlabel('Time (sec)')
     plt.ylabel('Rate (Hz)')
     # plt.ylim([0, 500])
-    plt.ylim([0, 350])
+    plt.ylim([0, max_rate_for_plot])
     
     # if channel_mapping_indices_to_actual(channel_num_idx) == '41':
     #     plt.show()
@@ -60,7 +60,7 @@ def make_detect_peaks_figs(ref_data, peak_inds, IPIs, channel_num_idx, t_axis, v
     plt.figure(1)
     plt.hist(IPIs, bins=np.arange(0, 30, 0.5), alpha=0.4, 
                 label=f'Ch {channel_mapping_indices_to_actual(channel_num_idx)}')
-    plt.ylim([0, 20])
+    # plt.ylim([0, 20])
     plt.title(f'Histogram of Channel {channel_mapping_indices_to_actual(channel_num_idx)}')
     plt.xlabel('Inter-peak Intervals (s)')
     plt.ylabel('Counts')
@@ -93,23 +93,17 @@ def make_detect_peaks_figs(ref_data, peak_inds, IPIs, channel_num_idx, t_axis, v
     plt.close()
 
 
-def make_peak_histograms(peak_heights, channel_num_idx, visualizations_folder):
+def make_peak_histograms(peak_heights, channel_num_idx, visualizations_folder, max_rate_for_plot):
     bin_width = 30
-    min_data = 0
-    max_data = 500
     # bin_width = 12
-    # min_data = 0
     # max_data = 250
     
-
-    bins = np.arange(min_data, max_data, bin_width)
+    bins = np.arange(0, max_rate_for_plot, bin_width)
 
     plt.figure()
     plt.hist(peak_heights, bins=bins, alpha=0.4, 
                 label=f'Ch {channel_mapping_indices_to_actual(channel_num_idx)}')
     plt.ylim([0, 35])
-    # plt.ylim([0, 150])
-
     plt.xlabel('Rate amplitude (Hz)')
     plt.ylabel('Count')
     
@@ -129,7 +123,9 @@ def make_peak_histograms(peak_heights, channel_num_idx, visualizations_folder):
     plt.savefig(Path(f'{specific_save_folder}/peak_histogram_{channel_mapping_indices_to_actual(channel_num_idx)}.png'))
     plt.close()
 
-def aligned_ensemble(ref_data, other_data, peak_inds, channel_num_idx, win_width, bin_size, visualizations_folder):
+
+
+def aligned_ensemble(ref_data, other_data, peak_inds, channel_num_idx, win_width, bin_size, visualizations_folder, max_rate_for_plot):
     # win_width is number of samples
     aligned_t_axis = np.arange(-win_width,win_width) * bin_size
     
@@ -152,7 +148,7 @@ def aligned_ensemble(ref_data, other_data, peak_inds, channel_num_idx, win_width
         'black',linewidth=2,label='Mean epoch')
     plt.xlabel('Time from peak (sec)')
     plt.ylabel('Rate (Hz)')
-    plt.ylim(0, 350)
+    plt.ylim(0, max_rate_for_plot)
     plt.title(f'High rate epochs aligned to peaks, same cluster: Channel {channel_mapping_indices_to_actual(channel_num_idx)}')
     plt.legend()
 
@@ -191,7 +187,7 @@ def aligned_ensemble(ref_data, other_data, peak_inds, channel_num_idx, win_width
     
         plt.xlabel('Time from peak (sec)')
         plt.ylabel('Rate (Hz)')
-        plt.ylim(0, 300)
+        plt.ylim(0, max_rate_for_plot)
         plt.suptitle(f'High rate epochs aligned to peaks, cross cluster \nReference channel {channel_mapping_indices_to_actual(channel_num_idx)} vs Channel {channel_mapping_indices_to_actual(other_ch_idx)}')
         plt.legend()
         plt.tight_layout()
@@ -221,35 +217,27 @@ if __name__ == '__main__':
     current_path = Path.cwd()
     # base_name = 'toy_data_samp_size_120'
     # base_name = 'toy_data_samp_size_100_l0_1'
-    base_name = 'toy_data_samp_size_120_l0_1'
+    # base_name = 'toy_data_samp_size_120_l0_1'
     # base_name = 'd73_r000_wD4_12s'
+    base_name = 'd73_r000_wD4_b0_02_sl90_0_o0_0'
 
     # parameters
-    bin_size = 0.005
+    bin_size = 0.02
     expected_end_time = 900.0
-    win_width = 400 # for aligned ensemble
-    # overlap = 0
-    overlap = 0.1 # 2 second overlap when binning, included in sample_len
+    win_width = 100 # for aligned ensemble
+    overlap = 0 # second overlap when binning, included in sample_len
+    max_rate_for_plot = 3 # Hz
 
     # parameters: do which functions
     do_detect_all_channel_peaks = True
-    do_make_detect_peaks_figs = False
-    do_aligned_peaks = False
-    do_make_peak_histograms = False
+    do_make_detect_peaks_figs = True
+    do_aligned_peaks = True
+    do_make_peak_histograms = True
 
     # Assumes shape (num_recording, num_samples, num_channels)
     output_file = current_path.parent / "data" / f"lfads_output_{base_name}.h5"
     train_indices = current_path.parent / "data"/ f"train_indices_{base_name}.npy"
     valid_indices = current_path.parent / "data"/ f"valid_indices_{base_name}.npy"
-    # output_file = '/Users/ellamohanram/Documents/GitHub/finding_latent_rates/lfads-torch/runs/toy_data_samp_size_120/2511201039_exampleSingle/lfads_output_toy_data_samp_size_120.h5'
-    # train_indices = '/Users/ellamohanram/Documents/GitHub/finding_latent_rates/data_inspection/files/train_indices_toy_120.npy'
-    # valid_indices = '/Users/ellamohanram/Documents/GitHub/finding_latent_rates/data_inspection/files/valid_indices_toy_120.npy'
-    # output_file = '/Users/ellamohanram/Documents/GitHub/finding_latent_rates/lfads-torch/runs/toy_data_samp_size_100_l0_1/2511201253_exampleSingle/lfads_output_toy_data_samp_size_100_ll0_1.h5'
-    # train_indices = '/Users/ellamohanram/Documents/GitHub/finding_latent_rates/data_inspection/files/train_indices_toy_ss100_l0_1.npy'
-    # valid_indices = '/Users/ellamohanram/Documents/GitHub/finding_latent_rates/data_inspection/files/valid_indices_toy_ss100_l0_1.npy'
-    output_file = '/Users/ellamohanram/Documents/GitHub/finding_latent_rates/lfads-torch/runs/toy_data_samp_size_120_l0_1/2511201256_exampleSingle/lfads_output_toy_data_samp_size_120_ll0_1.h5'
-    train_indices = '/Users/ellamohanram/Documents/GitHub/finding_latent_rates/data_inspection/files/train_indices_toy_ss120_l0_1.npy'
-    valid_indices = '/Users/ellamohanram/Documents/GitHub/finding_latent_rates/data_inspection/files/valid_indices_toy_ss120_l0_1.npy'
     
     # save folders
     visualizations_folder = Path(f'{current_path}/visualizations/{base_name}')
@@ -263,7 +251,8 @@ if __name__ == '__main__':
     if not data_file.exists():
         if Path(output_file).exists():
             print("Generating data_file from output_file...")
-                stitch_data(data_file, "rates", train_indices, valid_indices, bin_size, overlap, files_folder)
+            data = stitch_data(output_file, "rates", train_indices, valid_indices, bin_size, overlap, files_folder)
+            np.save(data_file, data)
         else:
             raise FileNotFoundError(f"Missing output_file: {output_file}")
     data = np.load(data_file)
@@ -289,13 +278,15 @@ if __name__ == '__main__':
 
             if len(IPIs) > 0:
                 if do_make_detect_peaks_figs:
-                    make_detect_peaks_figs(ref_data, peak_inds, IPIs, channel_num_idx, t_axis, visualizations_folder)
+                    make_detect_peaks_figs(ref_data, peak_inds, IPIs, channel_num_idx, t_axis, visualizations_folder, max_rate_for_plot)
                     
                 if do_aligned_peaks:
-                    aligned_ensemble(ref_data, other_data, peak_inds, channel_num_idx, win_width, bin_size, visualizations_folder)
+                    aligned_ensemble(ref_data, other_data, peak_inds, channel_num_idx, win_width, bin_size, visualizations_folder, max_rate_for_plot)
 
                 if do_make_peak_histograms:
-                    make_peak_histograms(peak_heights, channel_num_idx, visualizations_folder)
+                    make_peak_histograms(peak_heights, channel_num_idx, visualizations_folder, max_rate_for_plot)
+            else:
+                print('IPIs length 0')
 
     if do_detect_all_channel_peaks:
         try:

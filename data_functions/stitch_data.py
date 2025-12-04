@@ -135,3 +135,5 @@ def stitch_data(h5_file, h5_key, train_indices, valid_indices, bin_size, overlap
     mat_file.parent.mkdir(parents=True, exist_ok=True)
     print(f'mat_file: {mat_file}')
     savemat(str(mat_file), {'data': data})
+    
+    return data
