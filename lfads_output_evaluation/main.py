@@ -1,14 +1,13 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import scipy as sp
-import os
-import h5py 
+import os, re, h5py, sys
 from pathlib import Path
 from scipy import stats 
 from scipy.io import savemat
-import sys
 import pandas as pd
 import seaborn as sns
+
 # Add project root to Python path to allow importing data_functions
 _project_root = Path(__file__).parent.parent
 if str(_project_root) not in sys.path:
@@ -17,13 +16,13 @@ if str(_project_root) not in sys.path:
 from data_functions import stitch_data
 
 
-def set_up(data, channel_num_idx, t_axis):
+def set_up(data, channel_num_idx, t_axis, min_amplitude=0.5):
     ref_data = data[:,channel_num_idx]
     other_data = np.delete(data, channel_num_idx, axis=1)
     # peak_inds = sp.signal.find_peaks(ref_data, prominence=30)[0]
 
     ref_data_max = np.max(ref_data)
-    peak_inds, properties = sp.signal.find_peaks(ref_data, height=ref_data_max/2, prominence=ref_data_max/2)
+    peak_inds, properties = sp.signal.find_peaks(ref_data, height=ref_data_max/2, prominence=min_amplitude)
 
     peak_heights = properties['peak_heights']
     IPIs = np.diff(t_axis[peak_inds])  # same units as t_axis
@@ -215,16 +214,13 @@ def ipi_distribution(ipis, visualizations_folder):
 
 if __name__ == '__main__':
     current_path = Path.cwd()
-    # base_name = 'toy_data_samp_size_120'
-    # base_name = 'toy_data_samp_size_100_l0_1'
-    # base_name = 'toy_data_samp_size_120_l0_1'
-    # base_name = 'd73_r000_wD4_12s'
-    base_name = 'd73_r000_wD4_b0_02_sl90_0_o0_0'
+    lfads_torch_path = current_path.parent / 'lfads-torch'
 
     # parameters
+    base_name = 'd73_r000_wD4_b0_02_sl90_0_o0_0'
     bin_size = 0.02
     expected_end_time = 900.0
-    win_width = 100 # for aligned ensemble
+    win_width = 200 # for aligned ensemble
     overlap = 0 # second overlap when binning, included in sample_len
     max_rate_for_plot = 3 # Hz
 
@@ -235,9 +231,22 @@ if __name__ == '__main__':
     do_make_peak_histograms = True
 
     # Assumes shape (num_recording, num_samples, num_channels)
-    output_file = current_path.parent / "data" / f"lfads_output_{base_name}.h5"
-    train_indices = current_path.parent / "data"/ f"train_indices_{base_name}.npy"
-    valid_indices = current_path.parent / "data"/ f"valid_indices_{base_name}.npy"
+    #get most recent lfads run
+    from pathlib import Path
+
+    def get_most_recent_run(parent_dir):
+        parent = Path(parent_dir)
+        run_dirs = [p for p in parent.iterdir() if p.is_dir()]
+        if not run_dirs:
+            raise FileNotFoundError(f"No run dirs under {parent}")
+        # Uses the timestamp prefix to sort newest first
+        return max(run_dirs, key=lambda p: p.name.split("_", 1)[0])
+
+    runs_root = lfads_torch_path / "runs" / base_name
+    output_file = get_most_recent_run(runs_root) / f"lfads_output_{base_name}.h5"
+
+    train_indices = lfads_torch_path / "files" / base_name / f"train_indices_{base_name}.npy"
+    valid_indices = lfads_torch_path / "files" / base_name / f"valid_indices_{base_name}.npy"
     
     # save folders
     visualizations_folder = Path(f'{current_path}/visualizations/{base_name}')
@@ -255,7 +264,7 @@ if __name__ == '__main__':
             np.save(data_file, data)
         else:
             raise FileNotFoundError(f"Missing output_file: {output_file}")
-    data = np.load(data_file)
+    data = np.load(data_file, allow_pickle=True)
     print(f'data shape: {data.shape}')
 
     t_axis = np.arange(0, data.shape[0]) * bin_size
@@ -273,6 +282,8 @@ if __name__ == '__main__':
     if do_make_detect_peaks_figs or do_aligned_peaks or do_make_peak_histograms:
         for channel_num_idx in range(data.shape[1]):
             ref_data, other_data, peak_inds, IPIs, peak_heights = set_up(data, channel_num_idx, t_axis)
+            # if channel_num_idx == 15: # channel 44
+            #     print(list(peak_inds))
             if do_detect_all_channel_peaks:
                 ipis[channel_num_idx] = IPIs
 

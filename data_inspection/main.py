@@ -16,7 +16,7 @@ if __name__ == "__main__":
     files_folder = Path(f'{current_path}/files')
     os.makedirs(files_folder, exist_ok=True)
 
-    base_name = 'd73_r000_wD4_b0_02_sl90_0_o0_0'
+    base_name = 'd73_r001_wD4_b0_02_sl90_0_o0_0'
 
     data_file = current_path.parent / "data" / f"{base_name}.h5"
     train_indices = current_path.parent /"data"/ f"train_indices_{base_name}.npy"
