@@ -43,11 +43,7 @@ def make_detect_peaks_figs(ref_data, peak_inds, IPIs, channel_num_idx, t_axis, v
     plt.suptitle(f'Channel {channel_mapping_indices_to_actual(channel_num_idx)}')
     plt.xlabel('Time (sec)')
     plt.ylabel('Rate (Hz)')
-    # plt.ylim([0, 500])
     plt.ylim([0, max_rate_for_plot])
-    
-    # if channel_mapping_indices_to_actual(channel_num_idx) == '41':
-    #     plt.show()
 
     specific_save_folder = Path(f'{visualizations_folder}/peaks_ipis')
     os.makedirs(specific_save_folder, exist_ok=True)
@@ -130,6 +126,7 @@ def aligned_ensemble(ref_data, other_data, peak_inds, channel_num_idx, win_width
     
     #within clusters
     aligned_epochs_within = np.full((len(peak_inds),len(aligned_t_axis)), np.nan)
+    dy_dx = np.full((len(peak_inds),len(aligned_t_axis)), np.nan)
 
     plt.figure()
     for ind_num, ind in enumerate(peak_inds):
@@ -140,7 +137,23 @@ def aligned_ensemble(ref_data, other_data, peak_inds, channel_num_idx, win_width
         if start < 0 or end > ref_data.shape[0]:
             continue    
 
+        dy_dx[ind_num,:] = np.gradient(ref_data[start:end], aligned_t_axis, axis=0)
         aligned_epochs_within[ind_num,:] = ref_data[start:end]
+
+    # Plot derivative
+    plt.figure()
+    plt.plot(aligned_t_axis, dy_dx.T, alpha=0.5)
+    plt.plot(aligned_t_axis, np.nanmean(dy_dx, axis=0),
+        'black', linewidth=2, label='Mean derivative')
+    plt.xlabel('Time from peak (sec)')
+    plt.ylabel('Rate derivative (Hz/s)')
+    plt.title(f'Derivative of high rate epochs aligned to peaks, same cluster: Channel {channel_mapping_indices_to_actual(channel_num_idx)}')
+    plt.legend()
+    
+    specific_save_folder = Path(f'{visualizations_folder}/aligned_ensemble_within_cluster_derivative')
+    os.makedirs(specific_save_folder, exist_ok=True)
+    plt.savefig(Path(f'{specific_save_folder}/aligned_ensemble_within_cluster_derivative_{channel_mapping_indices_to_actual(channel_num_idx)}.png'))
+    plt.close()
 
     plt.plot(aligned_t_axis, aligned_epochs_within.T, alpha=0.5)
     plt.plot(aligned_t_axis, np.nanmean(aligned_epochs_within,axis=0),
@@ -225,29 +238,35 @@ if __name__ == '__main__':
     max_rate_for_plot = 3 # Hz
 
     # parameters: do which functions
-    do_detect_all_channel_peaks = True
-    do_make_detect_peaks_figs = True
+    do_detect_all_channel_peaks = False
+    do_make_detect_peaks_figs = False
     do_aligned_peaks = True
-    do_make_peak_histograms = True
+    do_make_peak_histograms = False
+    on_oscar = False
 
     # Assumes shape (num_recording, num_samples, num_channels)
     #get most recent lfads run
-    from pathlib import Path
+    if on_oscar:
+        from pathlib import Path
 
-    def get_most_recent_run(parent_dir):
-        parent = Path(parent_dir)
-        run_dirs = [p for p in parent.iterdir() if p.is_dir()]
-        if not run_dirs:
-            raise FileNotFoundError(f"No run dirs under {parent}")
-        # Uses the timestamp prefix to sort newest first
-        return max(run_dirs, key=lambda p: p.name.split("_", 1)[0])
+        def get_most_recent_run(parent_dir):
+            parent = Path(parent_dir)
+            run_dirs = [p for p in parent.iterdir() if p.is_dir()]
+            if not run_dirs:
+                raise FileNotFoundError(f"No run dirs under {parent}")
+            # Uses the timestamp prefix to sort newest first
+            return max(run_dirs, key=lambda p: p.name.split("_", 1)[0])
 
-    runs_root = lfads_torch_path / "runs" / base_name
-    output_file = get_most_recent_run(runs_root) / f"lfads_output_{base_name}.h5"
+        runs_root = lfads_torch_path / "runs" / base_name
+        output_file = get_most_recent_run(runs_root) / f"lfads_output_{base_name}.h5"
 
-    train_indices = lfads_torch_path / "files" / base_name / f"train_indices_{base_name}.npy"
-    valid_indices = lfads_torch_path / "files" / base_name / f"valid_indices_{base_name}.npy"
-    
+        train_indices = lfads_torch_path / "files" / base_name / f"train_indices_{base_name}.npy"
+        valid_indices = lfads_torch_path / "files" / base_name / f"valid_indices_{base_name}.npy"
+    else:
+        output_file = current_path.parent / "data" / f"lfads_output_{base_name}.h5"
+        train_indices = current_path.parent / "data"/ f"train_indices_{base_name}.npy"
+        valid_indices = current_path.parent / "data"/ f"valid_indices_{base_name}.npy"
+        
     # save folders
     visualizations_folder = Path(f'{current_path}/visualizations/{base_name}')
     files_folder = Path(f'{current_path}/files')
