@@ -229,25 +229,31 @@ if __name__ == '__main__':
     do_make_detect_peaks_figs = True
     do_aligned_peaks = True
     do_make_peak_histograms = True
+    do_oscar = False
 
     # Assumes shape (num_recording, num_samples, num_channels)
-    #get most recent lfads run
-    from pathlib import Path
+    if do_oscar:
+        #get most recent lfads run
+        from pathlib import Path
 
-    def get_most_recent_run(parent_dir):
-        parent = Path(parent_dir)
-        run_dirs = [p for p in parent.iterdir() if p.is_dir()]
-        if not run_dirs:
-            raise FileNotFoundError(f"No run dirs under {parent}")
-        # Uses the timestamp prefix to sort newest first
-        return max(run_dirs, key=lambda p: p.name.split("_", 1)[0])
+        def get_most_recent_run(parent_dir):
+            parent = Path(parent_dir)
+            run_dirs = [p for p in parent.iterdir() if p.is_dir()]
+            if not run_dirs:
+                raise FileNotFoundError(f"No run dirs under {parent}")
+            # Uses the timestamp prefix to sort newest first
+            return max(run_dirs, key=lambda p: p.name.split("_", 1)[0])
 
-    runs_root = lfads_torch_path / "runs" / base_name
-    output_file = get_most_recent_run(runs_root) / f"lfads_output_{base_name}.h5"
+        runs_root = lfads_torch_path / "runs" / base_name
+        output_file = get_most_recent_run(runs_root) / f"lfads_output_{base_name}.h5"
 
-    train_indices = lfads_torch_path / "files" / base_name / f"train_indices_{base_name}.npy"
-    valid_indices = lfads_torch_path / "files" / base_name / f"valid_indices_{base_name}.npy"
-    
+        train_indices = lfads_torch_path / "files" / base_name / f"train_indices_{base_name}.npy"
+        valid_indices = lfads_torch_path / "files" / base_name / f"valid_indices_{base_name}.npy"
+    else:
+        output_file = current_path.parent / "data" / f"lfads_output_{base_name}.h5"
+        train_indices = current_path.parent / "data"/ f"train_indices_{base_name}.npy"
+        valid_indices = current_path.parent / "data"/ f"valid_indices_{base_name}.npy"
+        
     # save folders
     visualizations_folder = Path(f'{current_path}/visualizations/{base_name}')
     files_folder = Path(f'{current_path}/files')
