@@ -5,6 +5,20 @@ import h5py
 from scipy.io import savemat
 import sys 
 
+def channel_mapping_indices_to_actual(channel_num_idx):
+    return str((channel_num_idx // 4 + 1) * 10 + (channel_num_idx % 4 + 1))
+
+def channel_mapping_indices_to_color(channel_num_idx, well):
+    patient_wells = ['B1']
+
+    control_colors = {0: "#57a6ad", 3: "#2c5c39", 11: "#79b559", 14: "#3d99ce"}
+    patient_colors = {0: "#9f3b60", 1: "#fdb5ac", 4:"#4f4447", 8:"#fe1d66"}
+    
+    if well in patient_wells:
+        return patient_colors[channel_num_idx]
+    else:
+        return control_colors[channel_num_idx]
+
 def stitch_data(h5_file, h5_key, train_indices, valid_indices, bin_size, overlap, save_folder=None, do_check=True):
     """
     Inputs: 

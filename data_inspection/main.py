@@ -1,32 +1,91 @@
 import numpy as np
 import os
 from pathlib import Path
-import h5py
-from scipy.io import savemat
 import sys 
+
 # Add project root to Python path to allow importing data_functions
 _project_root = Path(__file__).parent.parent
 if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
-from data_functions import stitch_data
+from data_functions import create_autocorrelogram_plot, create_peak_lags_histogram, create_spike_times_histogram
 
 if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser(description="Inspect and analyze raw data")
+    parser.add_argument("spike_times_grandfather_folder", type=str, help="full path to grandfather folder of spike times to inspect")
+    parser.add_argument("-w", "--well", type=str, help="well to inspect (in parent folder of spike times, which well)") #TO DO: DAY EVENTUALLY WHEN NEEDED
+    parser.add_argument("-i", "--indices", type=int, nargs='+', help="channel indices to analyze, 0-indexed") 
+    parser.add_argument("-n", "--num_channels", type=int, default=16, help="number of channels in the bin file")
+    args = parser.parse_args()
+
     current_path = Path.cwd()
     files_folder = Path(f'{current_path}/files')
     os.makedirs(files_folder, exist_ok=True)
 
-    base_name = 'd73_r001_wD4_b0_02_sl90_0_o0_0'
+    all_wells_spike_times = {}
+    all_wells_peak_lags_per_channel = {}
+    d_r_ws = [] #keep track of which day/recording num/well we looked at
 
-    data_file = current_path.parent / "data" / f"{base_name}.h5"
-    train_indices = current_path.parent /"data"/ f"train_indices_{base_name}.npy"
-    valid_indices = current_path.parent /"data"/  f"valid_indices_{base_name}.npy"
+    # PARAMETERS
+    min_secs = 0.002
+    max_secs = 15
+    bin_size_secs = 0.5
 
-    bin_size = 0.02  # seconds per bin
-    overlap = 0 # 2 second overlap when binning, included in sample_len
+    for dirpath, dirnames, _ in os.walk(args.spike_times_grandfather_folder):
+        for base_name in dirnames:
+            if args.well in base_name:
+                print(base_name)
+                d_r_ws.append(base_name)
+                spike_times_npy = os.path.join(dirpath, base_name, 'spike_times.npy')
+                spike_times = np.load(spike_times_npy, allow_pickle=True) #numpy.ndarray
+                
+                for channel_idx in args.indices:
+                    spike_time_diff_channel = np.diff(spike_times[channel_idx])
+                    if channel_idx not in all_wells_spike_times:
+                        all_wells_spike_times[channel_idx] = list(spike_time_diff_channel)
+                    else:
+                        all_wells_spike_times[channel_idx].extend(list(spike_time_diff_channel))
 
-    #RUN FUNCTIONS
-    stitch_data(data_file, "data", train_indices, valid_indices, bin_size, overlap, files_folder)
+                visualizations_folder = Path(f'{current_path}/visualizations')
+                os.makedirs(visualizations_folder, exist_ok=True)
+                base_name_folder = f'{visualizations_folder}/{base_name}'
+                os.makedirs(f'{base_name_folder}/auto_correlograms', exist_ok=True)
+
+                peak_lags_per_channel = create_autocorrelogram_plot(
+                    spike_times, 
+                    args.indices, 
+                    base_name, 
+                    args.well,
+                    base_name_folder, 
+                    min_lag_seconds=min_secs,
+                    max_lag_seconds=max_secs,
+                    bin_size_seconds=bin_size_secs
+                )
+                for k, v in peak_lags_per_channel.items():
+                    if k not in all_wells_peak_lags_per_channel:
+                        all_wells_peak_lags_per_channel[k] = list(v)
+                    else:
+                        all_wells_peak_lags_per_channel[k].extend(v)
+
+                print('\n')
+
+    cross_analysis_folder = Path(f'{visualizations_folder}/cross_analysis')
+    os.makedirs(cross_analysis_folder, exist_ok=True)
+
+    peak_lags_folder = Path(f'{cross_analysis_folder}/peak_lags')
+    os.makedirs(peak_lags_folder, exist_ok=True)
+    create_peak_lags_histogram(all_wells_peak_lags_per_channel, d_r_ws, args.well, peak_lags_folder, bins=30)
+
+    spike_times_folder = Path(f'{cross_analysis_folder}/spike_times')
+    os.makedirs(spike_times_folder, exist_ok=True)
+    #mask to consider min and max
+    # Mask each channel's spike times individually and keep dictionary structure
+    all_wells_spike_times_masked = {
+        k: np.asarray(v)[(np.asarray(v) >= min_secs) & (np.asarray(v) <= max_secs)]
+        for k, v in all_wells_spike_times.items()
+    }
+    create_spike_times_histogram(all_wells_spike_times_masked, d_r_ws, args.well, spike_times_folder, bins=30)
 
 # import numpy as np
 
