@@ -18,7 +18,7 @@ from data_functions.lfads_output_analysis import set_up, make_detect_peaks_figs,
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser(description="Inspect and analyze LFADS output")
-    parser.add_argument("lfads_output_grandfather_folder", type=str, help="full path to grandfather folder of lfads outputs to inspect")
+    parser.add_argument("lfads_output_grandfather_folder", type=str, help="full path to grandfather folder of lfads outputs to inspect, ie runs folder")
     parser.add_argument("-w", "--well", type=str, help="well to inspect (in parent folder of spike times, which well)") #TO DO: DAY EVENTUALLY WHEN NEEDED
     parser.add_argument("-i", "--indices", type=int, nargs='+', help="channel indices to analyze, 0-indexed") 
     parser.add_argument("-n", "--num_channels", type=int, default=16, help="number of channels in the bin file")
@@ -79,6 +79,7 @@ if __name__ == '__main__':
                 base_name_folder = Path(f'{visualizations_folder}/{base_name}')
                 os.makedirs(base_name_folder, exist_ok=True)
 
+
                 # make data file
                 data_file = Path(f'{files_folder}/lfads_rates_recordings_{base_name}.npy')
                 print(f'data file: {data_file}')
@@ -91,16 +92,14 @@ if __name__ == '__main__':
                         raise FileNotFoundError(f"Missing output_file: {output_file}")
 
                 data = np.load(data_file, allow_pickle=True)
-                print(f'data shape: {data.shape}')
-
                 t_axis = np.arange(0, data.shape[0]) * bin_size
-                print(f'time axis: {t_axis.shape}')
                 if np.abs(t_axis[-1] - expected_end_time) > 2*bin_size:
                     raise Exception('Time axis not close to correct duration')
 
+
                 if do_detect_all_channel_peaks:
                     ipis = {}
-
+                    
                     if not do_make_detect_peaks_figs:
                         do_make_detect_peaks_figs = True
 

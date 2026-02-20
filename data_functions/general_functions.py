@@ -151,3 +151,46 @@ def stitch_data(h5_file, h5_key, train_indices, valid_indices, bin_size, overlap
     savemat(str(mat_file), {'data': data})
     
     return data
+
+
+# import numpy as np
+
+# split_frac = 0.75
+# # Create a 3D array of shape (5, 3, 4) with random integers between 0 (inclusive) and 10 (exclusive)
+# binned_trials = np.random.randint(low=0, high=10, size=(5, 3, 4))
+# print("\nUsing np.random.randint():")
+# print(binned_trials)
+
+# n_sessions = binned_trials.shape[0]
+# indices = np.arange(n_sessions)
+
+# rng = np.random.default_rng(seed=0)
+# rng.shuffle(indices)
+
+# # Compute split point
+# split_point = int(n_sessions * split_frac)
+
+# # Split into train and validation indices
+# train_idx = indices[:split_point]
+# valid_idx = indices[split_point:]
+# print(f'train_idx {train_idx}')
+# print(f'valid_idx {valid_idx}')
+
+# # Slice data
+# train_data = binned_trials[train_idx]
+# valid_data = binned_trials[valid_idx]
+# print(f'train_data {train_data}')
+# print(f'valid_data {valid_data}')
+
+# #end
+# n_sessions = len(train_idx) + len(valid_idx)
+
+# # Combine indices and data in the same order
+# all_indices = np.concatenate([train_idx, valid_idx])
+# all_data = np.concatenate([train_data, valid_data], axis=0)
+
+# # Sort by indices to restore original order
+# sort_order = np.argsort(all_indices)
+# data = all_data[sort_order]  
+
+# print(f'data {data}')
