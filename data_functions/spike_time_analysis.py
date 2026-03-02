@@ -6,16 +6,23 @@ import sys
 import seaborn as sns
 import os
 import re
-import pandas as pd 
+import pandas as pd
+from itertools import combinations
 
 # SPIKE TIME ANALYSIS FUNCTIONS
 _project_root = Path(__file__).parent.parent
 if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
-def create_autocorrelogram_plot(spike_times, channel_indices, dirname, well, output_path, fs=50000, min_lag_seconds=0.006, max_lag_seconds=10.0, bin_size_seconds=0.001, recording_duration_seconds=900):
+from data_functions.general_functions import channel_mapping_indices_to_actual, channel_mapping_indices_to_color
+
+#https://dsp.stackexchange.com/questions/41217/how-to-normalize-output-of-tt-scipy-signal-correlate 
+# https://stackoverflow.com/questions/62987317/the-normalized-cross-correlation-of-two-signals-in-python
+
+def create_correlogram_plots(spike_times, channel_indices, dirname, well, output_path, fs=50000, min_lag_seconds=0.006, max_lag_seconds=10.0, bin_size_seconds=0.002, recording_duration_seconds=900):
     """
-    Create autocorrelogram plot for given channel indices.
+    Create autocorrelogram plots for given channel indices, and
+    cross-correlogram plots for all pairs of the given channel indices.
     
     Parameters:
     -----------
@@ -36,81 +43,95 @@ def create_autocorrelogram_plot(spike_times, channel_indices, dirname, well, out
     recording_duration_seconds : float
         Total recording duration in seconds (default: 900)
     """
-    from data_functions.general_functions import channel_mapping_indices_to_actual, channel_mapping_indices_to_color
-
     peak_lags_per_channel = {}
 
-    for channel_idx in channel_indices:
-        spike_time = spike_times[channel_idx]
-        
-        # Create binned spike train (count-based)
-        num_bins = int(recording_duration_seconds / bin_size_seconds)
-        spike_train = np.zeros(num_bins)
-        
-        # Convert spike times to bin indices
-        spike_bins = (spike_time / bin_size_seconds).astype(int)
-        # Remove any spikes beyond recording duration
-        spike_bins = spike_bins[spike_bins < num_bins]
-        # Count spikes in each bin
-        for bin_idx in spike_bins:
-            spike_train[bin_idx] += 1
-        
-        # Compute autocorrelation 
-        autocorr = signal.correlate(spike_train, spike_train, mode='full')
-        lags = signal.correlation_lags(len(spike_train), len(spike_train), mode='full')
-        
-        # Convert lags to seconds
-        lags_seconds_full = lags * bin_size_seconds
-        
-        # Normalize based on min_lag_seconds onwards
-        # Find the normalization window
-        norm_mask = (lags_seconds_full >= min_lag_seconds) & (lags_seconds_full <= max_lag_seconds)
-        autocorr_masked = autocorr[norm_mask]
-        autocorr = autocorr / np.max(autocorr_masked)
-        
-        # Keep only positive lags from min_lag_seconds to max_lag_seconds
-        positive_mask = (lags_seconds_full >= min_lag_seconds) & (lags_seconds_full <= max_lag_seconds)
-        lags_seconds = lags_seconds_full[positive_mask]
-        autocorr = autocorr[positive_mask]
-        
-        # Find peaks in autocorrelogram
-        # PARAMETER - HEIGHT (:= CORRELATION SCORE FOR PEAK FINDING)
-        peaks, properties = signal.find_peaks(autocorr, height=0.7) 
+    # Pre-compute binned spike trains for all requested channels
+    num_bins = int(recording_duration_seconds / bin_size_seconds)
+    spike_trains = {}
 
-        # peak indices to seconds (peaks are indices in the autocorr/lags_seconds arrays)
-        # lags_seconds already contains the time values, so we can directly index
-        peak_lags_per_channel[channel_idx] = list(lags_seconds[peaks])
-        # print(f'Channel {channel_mapping_indices_to_actual(channel_idx)} - Mean peak lag: {np.mean(peak_times_seconds):.3f} s ({np.mean(peak_times_seconds)*1000:.1f} ms)')
+    for channel_idx in channel_indices:
+        spike_time = np.asarray(spike_times[channel_idx])
+
+        spike_train = np.zeros(num_bins)
+        if spike_time.size > 0:
+            spike_bins = (spike_time / bin_size_seconds).astype(int)
+            spike_bins = spike_bins[spike_bins < num_bins]
+            for bin_idx in spike_bins:
+                spike_train[bin_idx] += 1
+
+        spike_trains[channel_idx] = spike_train
+
+    # Autocorrelograms
+    for channel_idx in channel_indices:
+        spike_train = spike_trains[channel_idx]
+
+        autocorr = signal.correlate(spike_train, spike_train, mode='full')
+        autocorr /= np.sum(np.abs(spike_train)**2)
+
+        lags = signal.correlation_lags(len(spike_train), len(spike_train), mode='full')
+        lags_seconds = lags * bin_size_seconds
+
+        mask = (lags_seconds >= min_lag_seconds) & (lags_seconds <= max_lag_seconds)
+        autocorr_masked = autocorr[mask]   
+        lags_masked = lags_seconds[mask]
+
+        peaks, properties = signal.find_peaks(autocorr_masked, height=0.7)
+        peak_lags_per_channel[channel_idx] = list(lags_masked[peaks])
 
         fig = plt.figure(figsize=(10, 6))
         ax = fig.add_subplot(1, 1, 1)
 
-        ax.plot(lags_seconds, autocorr, channel_mapping_indices_to_color(channel_idx, well), linewidth=1)
+        ax.plot(lags_masked, autocorr_masked, channel_mapping_indices_to_color(channel_idx, well), linewidth=1)
         if len(peaks) > 0:
-            ax.plot(lags_seconds[peaks], autocorr[peaks], 'ro', 
+            ax.plot(lags_masked[peaks], autocorr_pos[peaks], 'ro',
                     markersize=8, label=f'Peaks (n={len(peaks)})', zorder=5)
             ax.legend()
-        ax.set_xlabel('Lag (s)',fontsize=14)
-        ax.set_ylabel('Normalized Autocorrelation',fontsize=14)
-        ax.set_title(f'Autocorrelogram for Channel {channel_mapping_indices_to_actual(channel_idx)} - {dirname}',fontsize=16)
+        ax.set_xlabel('Lag (s)', fontsize=14)
+        ax.set_ylabel('Normalized Autocorrelation', fontsize=14)
+        fig.suptitle(f'Autocorrelogram for Channel {channel_mapping_indices_to_actual(channel_idx)} ', fontsize=16)
+        ax.set_title(f'{dirname}', fontsize=8)
         ax.set_xlim(min_lag_seconds, max_lag_seconds)
         ax.grid(True, alpha=0.3)
         fig.tight_layout()
         plt.savefig(f'{output_path}/auto_correlograms/{channel_mapping_indices_to_actual(channel_idx)}.png')
         plt.close()
+
+    for ch1, ch2 in combinations(channel_indices, 2):
+        train1 = spike_trains[ch1]
+        train2 = spike_trains[ch2]
+
+        crosscorr = signal.correlate(train1, train2, mode='full')
+        crosscorr /= np.sqrt(np.sum(np.abs(train1)**2)*np.sum(np.abs(train2))**2)
+
+        lags = signal.correlation_lags(len(train1), len(train2), mode='full')
+        lags_seconds = lags * bin_size_seconds
+
+        mask = (lags_seconds >= -max_lag_seconds) & (lags_seconds <= max_lag_seconds)
+        lags_seconds = lags_seconds[mask]
+        crosscorr_plot = crosscorr[mask]
+
+        fig = plt.figure(figsize=(10, 6))
+        ax = fig.add_subplot(1, 1, 1)
+
+        ax.plot(lags_seconds, crosscorr_plot, channel_mapping_indices_to_color(ch1, well), linewidth=1)
+        ax.axvline(0, color='k', linestyle='--', linewidth=0.8, alpha=0.5)
+        ax.set_xlabel('Lag (s)', fontsize=14)
+        ax.set_ylabel('Normalized Cross-correlation', fontsize=14)
+        fig.suptitle(f'Cross-correlogram for Channels {channel_mapping_indices_to_actual(ch1)} & {channel_mapping_indices_to_actual(ch2)}', fontsize=16)
+        ax.set_title(f'{dirname}', fontsize=8)
+        ax.set_xlim(-max_lag_seconds, max_lag_seconds)
+        ax.grid(True, alpha=0.3)
+        fig.tight_layout()
+        plt.savefig(f'{output_path}/cross_correlograms/{channel_mapping_indices_to_actual(ch1)}_vs_{channel_mapping_indices_to_actual(ch2)}.png')
+        plt.close()
     
     return peak_lags_per_channel
 
-#TODO: def find common features between d_r_ws to better name the saved figure
-
-def find_common_features(d_r_ws):
-    find_common = [data_point.split('_') for data_point in d_r_ws]
-    
-
-def create_peak_lags_histogram(all_peak_lags, d_r_ws, well, output_path, bins=20):
-    from data_functions.general_functions import channel_mapping_indices_to_actual, channel_mapping_indices_to_color
-
+def create_peak_lags_histogram(all_peak_lags, days, recordings, well, output_path, bins=20):
     for channel_idx, cumulative_peak_lags in all_peak_lags.items():
+        if len(cumulative_peak_lags) == 0:
+            continue
+
         mean_lag = np.mean(cumulative_peak_lags)
         std_lag = np.std(cumulative_peak_lags)
 
@@ -118,14 +139,15 @@ def create_peak_lags_histogram(all_peak_lags, d_r_ws, well, output_path, bins=20
         plt.xlabel('Peak lag (s)', fontsize=14)
         plt.ylabel('Count', fontsize=14)
         plt.suptitle(f'Peak lags histogram for Channel {channel_mapping_indices_to_actual(channel_idx)} - Mean: {mean_lag:.3f}s, Std: {std_lag:.3f}s')
-        plt.title(', '.join(d_r_ws), fontsize=8) 
+        plt.title(f"Days {', '.join(str(d) for d in days)}, Recordings {', '.join(str(r) for r in recordings)}", fontsize=8) 
         plt.savefig(f'{output_path}/cross_analysis_{well}_{channel_mapping_indices_to_actual(channel_idx)}.png')
         plt.close()
 
-def create_spike_times_histogram(all_wells_spike_times, d_r_ws, well, output_path, bins=20):
-    from data_functions.general_functions import channel_mapping_indices_to_actual, channel_mapping_indices_to_color
-
+def create_spike_times_diff_histogram(all_wells_spike_times, days, recordings, well, output_path, bins=20):
     for channel_idx, cumulative_spike_times in all_wells_spike_times.items():
+        if len(cumulative_spike_times) == 0:
+            continue
+            
         mean_spike_time = np.mean(cumulative_spike_times)
         std_spike_time = np.std(cumulative_spike_times)
 
@@ -133,8 +155,8 @@ def create_spike_times_histogram(all_wells_spike_times, d_r_ws, well, output_pat
         plt.xlabel('Spike time diff (s)', fontsize=14)
         plt.ylabel('Count', fontsize=14)
         plt.suptitle(f'Spike time difference histogram for Channel {channel_mapping_indices_to_actual(channel_idx)} - Mean: {mean_spike_time:.3f}s, Std: {std_spike_time:.3f}s')
-        plt.title(', '.join(d_r_ws), fontsize=8) 
-        plt.savefig(f'{output_path}/cross_analysis__{well}_{channel_mapping_indices_to_actual(channel_idx)}.png')
+        plt.title(f"Days {', '.join(str(d) for d in days)}, Recordings {', '.join(str(r) for r in recordings)}", fontsize=8) 
+        plt.savefig(f'{output_path}/cross_analysis_{well}_{channel_mapping_indices_to_actual(channel_idx)}.png')
         plt.close()
 
 

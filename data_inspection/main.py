@@ -13,9 +13,9 @@ _project_root = Path(__file__).parent.parent
 if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
-from data_functions import (create_autocorrelogram_plot,
+from data_functions import (create_correlogram_plots,
                             create_peak_lags_histogram, 
-                            create_spike_times_histogram, 
+                            create_spike_times_diff_histogram, 
                             parse_filename, 
                             changes_btwn_recordings, 
                             get_well_stats, 
@@ -38,54 +38,59 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     current_path = Path.cwd()
-    files_folder = Path(f'{current_path}/files')
-    os.makedirs(files_folder, exist_ok=True)
     visualizations_folder = Path(f'{current_path}/visualizations')
     os.makedirs(visualizations_folder, exist_ok=True)
     cross_analysis_folder = Path(f'{visualizations_folder}/cross_analysis')
     os.makedirs(cross_analysis_folder, exist_ok=True)
+    peak_lags_folder = Path(f'{cross_analysis_folder}/peak_lags')
+    os.makedirs(peak_lags_folder, exist_ok=True)
+    spike_times_folder = Path(f'{cross_analysis_folder}/spike_times')
+    os.makedirs(spike_times_folder, exist_ok=True)
     treatment_effectiveness_folder = Path(f'{cross_analysis_folder}/treatment_effectiveness')
     os.makedirs(treatment_effectiveness_folder, exist_ok=True)
     voltage_threshold_folder = Path(f'{cross_analysis_folder}/voltage_thresholds')
     os.makedirs(voltage_threshold_folder, exist_ok=True)
 
+    # SPIKE TIME ANALYSIS
+
     # PARAMETERS
     min_secs = 0.002
-    max_secs = 15
-    bin_size_secs = 0.5
+    max_secs = 30
+    bin_size_secs = 0.05
 
-    for dirpath, dirnames, _ in os.walk(args.lfads_preprocessing_files_folder):
-        for base_name in dirnames:
-            # SPIKE TIME ANALYSIS
-            # TODO: fix so that it works with nargs of wells
-            if args.do_spike_time_analysis:
-                print('Doing spike time analysis...')
+    if args.do_spike_time_analysis:
+        print('Doing spike time analysis...')
 
-                all_wells_spike_times = {}
-                all_wells_peak_lags_per_channel = {}
-                d_r_ws = [] #keep track of which day/recording num/well we looked at
-                
-                if str(args.day) in base_name and args.well in base_name:
-                    print(base_name)
-                    d_r_ws.append(base_name)
-                    spike_times_npy = os.path.join(dirpath, base_name, 'spike_times.npy')
-                    spike_times = np.load(spike_times_npy, allow_pickle=True) #numpy.ndarray
-                    
+        for well in args.well:
+            all_wells_spike_time_diff = {}
+            all_wells_peak_lags_per_channel = {}
+
+            for day in args.day:
+                for recording in args.recording:
+                    base_name = f"d{day}_r{recording:03d}_w{well}"
+                    filepath = os.path.join(
+                        args.lfads_preprocessing_files_folder,
+                        base_name,
+                        "spike_times.npy"
+                    )
+                    spike_times = np.load(filepath, allow_pickle=True) #numpy.ndarray
+
                     for channel_idx in args.indices:
                         spike_time_diff_channel = np.diff(spike_times[channel_idx])
-                        if channel_idx not in all_wells_spike_times:
-                            all_wells_spike_times[channel_idx] = list(spike_time_diff_channel)
+                        if channel_idx not in all_wells_spike_time_diff:
+                            all_wells_spike_time_diff[channel_idx] = list(spike_time_diff_channel)
                         else:
-                            all_wells_spike_times[channel_idx].extend(list(spike_time_diff_channel))
+                            all_wells_spike_time_diff[channel_idx].extend(list(spike_time_diff_channel))
 
                     base_name_folder = f'{visualizations_folder}/{base_name}'
                     os.makedirs(f'{base_name_folder}/auto_correlograms', exist_ok=True)
+                    os.makedirs(f'{base_name_folder}/cross_correlograms', exist_ok=True)
 
-                    peak_lags_per_channel = create_autocorrelogram_plot(
+                    peak_lags_per_channel = create_correlogram_plots(
                         spike_times, 
                         args.indices, 
                         base_name, 
-                        args.well,
+                        well,
                         base_name_folder, 
                         min_lag_seconds=min_secs,
                         max_lag_seconds=max_secs,
@@ -96,22 +101,16 @@ if __name__ == "__main__":
                             all_wells_peak_lags_per_channel[k] = list(v)
                         else:
                             all_wells_peak_lags_per_channel[k].extend(v)
+        
+            create_peak_lags_histogram(all_wells_peak_lags_per_channel, args.day, args.recording, well, peak_lags_folder, bins=30)
 
-                    print('\n')
-
-                peak_lags_folder = Path(f'{cross_analysis_folder}/peak_lags')
-                os.makedirs(peak_lags_folder, exist_ok=True)
-                create_peak_lags_histogram(all_wells_peak_lags_per_channel, d_r_ws, args.well, peak_lags_folder, bins=30)
-
-                spike_times_folder = Path(f'{cross_analysis_folder}/spike_times')
-                os.makedirs(spike_times_folder, exist_ok=True)
-                #mask to consider min and max
-                # Mask each channel's spike times individually and keep dictionary structure
-                all_wells_spike_times_masked = {
-                    k: np.asarray(v)[(np.asarray(v) >= min_secs) & (np.asarray(v) <= max_secs)]
-                    for k, v in all_wells_spike_times.items()
-                }
-                create_spike_times_histogram(all_wells_spike_times_masked, d_r_ws, args.well, spike_times_folder, bins=30)    
+            #mask to consider min and max
+            # Mask each channel's spike times individually and keep dictionary structure
+            all_wells_spike_times_masked = {
+                k: np.asarray(v)[(np.asarray(v) >= min_secs) & (np.asarray(v) <= max_secs)]
+                for k, v in all_wells_spike_time_diff.items()
+            }
+            create_spike_times_diff_histogram(all_wells_spike_times_masked, args.day, args.recording, well, spike_times_folder, bins=30)      
 
     # VOLTAGE THRESHOLD ANALYSIS
     if args.do_voltage_threshold_anlaysis:

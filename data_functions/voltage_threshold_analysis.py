@@ -14,18 +14,6 @@ if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
 
-def parse_filename(filename):
-    """Extract day, recording, and well from filename like d83_r006_wD4_thresholds.csv"""
-    basename = os.path.basename(filename)
-    match = re.match(r'd(\d+)_r(\d+)_w([A-Z]\d+)_thresholds\.csv', basename)
-    if match:
-        return {
-            'day': int(match.group(1)),
-            'recording': int(match.group(2)),
-            'well': match.group(3)
-        }
-    return {'day': None, 'recording': None, 'well': None}
-
 def changes_btwn_recordings(well_data, well, channel_cols, output_path):
     changes = []
     
@@ -230,7 +218,7 @@ def test_treatment_effectiveness(day, well, threshold_matrix, bin_file_folder, o
     
     return percent_reduction
 
-def get_spike_times(bin_pattern, num_channels=16, sampling_frequency=50000)
+def get_spike_times(bin_pattern, num_channels=16, sampling_frequency=50000):
     bin_files = glob.glob(control_bin_pattern, recursive=True)
     if len(bin_files) == 0:
         raise FileNotFoundError(f"No control bin file found for pattern: {bin_pattern}")
