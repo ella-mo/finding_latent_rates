@@ -20,6 +20,7 @@ from data_functions import (create_correlogram_plots,
                             changes_btwn_recordings, 
                             get_well_stats, 
                             make_comparison_figs,
+                            test_treatment_effectiveness
                             )
 
 if __name__ == "__main__":
@@ -30,11 +31,12 @@ if __name__ == "__main__":
     parser.add_argument("-d", "--day", type=int, nargs='+', help="day(s) to inspect (in parent folder, which day)") 
     parser.add_argument("-r", "--recording", type=int, nargs='+', help="recordings to inspect (in parent folder, which recording)") 
     parser.add_argument("-w", "--well", type=str, nargs='+', help="well(s) to inspect")
-    parser.add_argument("-i", "--indices", type=int, nargs='+', help="channel indices to analyze, 0-indexed") 
+    parser.add_argument("-i", "--indices", type=int, nargs='+', help="channel indices to analyze, 0-indexed, only used for spike time analysis currently") 
 
     parser.add_argument("-st", "--do_spike_time_analysis", action="store_true", help="whether to do spike time analysis")
     parser.add_argument("-vt", "--do_voltage_threshold_anlaysis", action="store_true", help="whether to do voltage threshold analysis")
     #e.g. if you want to do spike time analysis, add -st flag; voltage threshold analysis, -vt
+    parser.add_argument("-n", "--num_channels", default=16, help="number of channels")
     args = parser.parse_args()
 
     current_path = Path.cwd()
@@ -145,8 +147,8 @@ if __name__ == "__main__":
             if len(args.well) == 1:
                 change_threshold_axes = [change_threshold_axes]
         else:
-            # Keep track of percent reduction for all requested wells
-            well_percent_reduction = []
+            # Keep track of percent change for all requested wells
+            well_percent_change = []
             percent_reduct_fig, percent_reduct_axes = plt.subplots(1, 1, figsize=(10, 6))
 
 
@@ -199,7 +201,9 @@ if __name__ == "__main__":
                 change_threshold_axes[idx].set_ylabel('Channel')
             else:
                 # Determine treatment effectiveness between two recordings: control and 15/30 minutes after application of treatment 
-                well_percent_reduction.append(test_treatment_effectiveness(args.day, well, threshold_matrix, args.bin_file_folder, treatment_effectiveness_folder))
+                treatment_effectiveness_per_well_folder = Path(f'{treatment_effectiveness_folder}/{well}')
+                os.makedirs(treatment_effectiveness_per_well_folder, exist_ok=True)
+                well_percent_change.append(test_treatment_effectiveness(args.day, well, threshold_matrix, args.bin_files_folder, treatment_effectiveness_per_well_folder))
 
         if args.bin_files_folder is None:
             # Create comparison DataFrame and visualize comparison
@@ -213,12 +217,13 @@ if __name__ == "__main__":
             plt.close(change_threshold_fig)
         else:
             # Shape to (channels x wells) for heatmap: rows = channels, cols = wells
-            percent_matrix = np.vstack(well_percent_reduction).T
+            # if % is negative, then the number of spikes from the control->treatment *increased*
+            percent_matrix = np.vstack(well_percent_change).T
             sns.heatmap(percent_matrix, annot=True, fmt='.3f', cmap='RdBu_r', center=0,
                         xticklabels=args.well,
                         yticklabels=[f'Ch {i}' for i in range(args.num_channels)],
-                        ax=percent_reduct_axes, cbar_kws={'label': 'Percent Reduction Change'},
+                        ax=percent_reduct_axes, cbar_kws={'label': 'Percent Change'},
                         vmin=-100, vmax=100)
             percent_reduct_fig.tight_layout()
-            percent_reduct_fig.savefig(f'{treatment_effectiveness_folder}/percent_reduction_heatmap.png')
+            percent_reduct_fig.savefig(f'{treatment_effectiveness_folder}/percent_change_heatmap.png')
             plt.close(percent_reduct_fig)

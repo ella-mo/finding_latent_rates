@@ -7,6 +7,7 @@ import seaborn as sns
 import os
 import re
 import pandas as pd 
+import glob
 
 #VOLTAGE THRESHOLD ANALYSIS FUNCTIONS
 _project_root = Path(__file__).parent.parent
@@ -179,13 +180,40 @@ def extract_threshold_waveforms(signal, threshold, fs):
     return crossing_times
 
 
-def test_treatment_effectiveness(day, well, threshold_matrix, bin_file_folder, output_folder, num_channels=16):
+def test_treatment_effectiveness(day, well, threshold_matrix, bin_files_folder, output_folder, num_channels=16):
     # PARAMETER
-    control_spike_times_per_channel= get_spike_times(os.path.join(bin_files_folder, f"**/006/**d{day}**{well}.bin"))
-    treatment_spike_times_per_channel= get_spike_times(os.path.join(bin_files_folder, f"**/009/**d{day}**{well}.bin"))
+    control_bin_path = os.path.join(bin_files_folder, f"**/006/**d{day}**{well}.bin")
+    treatment_bin_path = os.path.join(bin_files_folder, f"**/009/**d{day}**{well}.bin")
+    
+    control_data = load_bin_file(control_bin_path)
+    treatment_data = load_bin_file(treatment_bin_path)
 
-    # Create times of threshold crossing vs total number of spikes (cumulative) for each channel
+    # Get times of threshold crossing 
+    control_spike_times_per_channel= get_spike_times(control_data, threshold_matrix)
+    treatment_spike_times_per_channel= get_spike_times(treatment_data, threshold_matrix)
+
     for ch in range(num_channels):
+        # Create voltage histogram to see distribution of voltage per channel
+        control_voltage = control_data[:, ch]
+        treatment_voltage = treatment_data[:, ch]
+        print(len(control_voltage), len(treatment_voltage))
+
+        plt.figure(figsize=(10,8))
+        #PARAMETER
+        bins = 30
+        plt.hist(control_voltage, bins=bins, density=True, alpha=0.5, label='Control', color='blue')
+        plt.hist(treatment_voltage, bins=bins, density=True, alpha=0.5, label='Treatment', color='orange')
+        
+        plt.title(f'Well {well} - Channel {ch} Voltage Distribution')
+        plt.xlabel('Voltage (uV)')
+        plt.ylabel('Cumulative voltage count')
+        plt.legend()
+        plt.tight_layout()
+        os.makedirs(f'{output_folder}/voltage_distribution', exist_ok=True)
+        plt.savefig(f'{output_folder}/voltage_distribution/ch_{ch}_voltage_distribution.png')
+        plt.close()
+
+        # Create times of threshold crossings vs total number of spikes (cumulative) for each channel
         control_spike_times = np.asarray(control_spike_times_per_channel[ch])
         treatment_spike_times = np.asarray(treatment_spike_times_per_channel[ch])
         plt.figure(figsize=(10, 8))
@@ -193,23 +221,23 @@ def test_treatment_effectiveness(day, well, threshold_matrix, bin_file_folder, o
         if control_spike_times.size > 0:
             control_sorted = np.sort(control_spike_times)
             control_counts = np.arange(1, control_sorted.size + 1)
-            plt.step(control_sorted, control_counts, where='post', label='Control')
+            plt.step(control_sorted, control_counts, where='post', label='Control', color='blue')
 
         if treatment_spike_times.size > 0:
             treatment_sorted = np.sort(treatment_spike_times)
             treatment_counts = np.arange(1, treatment_sorted.size + 1)
-            plt.step(treatment_sorted, treatment_counts, where='post', label='Treatment')
+            plt.step(treatment_sorted, treatment_counts, where='post', label='Treatment', color='orange')
 
         plt.title(f'Well {well} - Channel {ch} Spike Counts Over Time')
         plt.xlabel('Time (s)')
         plt.ylabel('Cumulative spike count')
         plt.legend()
         plt.tight_layout()
-        os.makedirs(f'{output_folder}/{well}', exist_ok=True)
-        plt.savefig(f'{output_folder}/{well}/ch_{ch}_spike_counts.png')
+        os.makedirs(f'{output_folder}/spike_counts', exist_ok=True)
+        plt.savefig(f'{output_folder}/spike_counts/ch_{ch}_spike_counts.png')
         plt.close()
 
-    # Per-channel percent reduction in spike count for this well
+    # Per-channel percent change in spike count for this well
     control_counts = np.array([len(st) for st in control_spike_times_per_channel])
     treatment_counts = np.array([len(st) for st in treatment_spike_times_per_channel])
     with np.errstate(divide='ignore', invalid='ignore'):
@@ -218,22 +246,25 @@ def test_treatment_effectiveness(day, well, threshold_matrix, bin_file_folder, o
     
     return percent_reduction
 
-def get_spike_times(bin_pattern, num_channels=16, sampling_frequency=50000):
-    bin_files = glob.glob(control_bin_pattern, recursive=True)
+def load_bin_file(bin_path, num_channels=16, sampling_frequency=50000):
+    bin_files = glob.glob(bin_path, recursive=True)
     if len(bin_files) == 0:
-        raise FileNotFoundError(f"No control bin file found for pattern: {bin_pattern}")
+        raise FileNotFoundError(f"No bin file found for pattern: {bin_path}")
     bin_file = bin_files[0]
-    print(f'control: {bin_file}')
+    print(f'found {bin_file}')
     file_stat = os.stat(bin_file)
     num_elements = file_stat.st_size // 4  # float32 has 4 bytes
-    num_samples = num_elements // args.num_channels
+    num_samples = num_elements // num_channels
     data = np.memmap(bin_file, dtype='float32', mode='r', shape=(num_samples, num_channels))   
 
+    return data
+
+def get_spike_times(data, threshold_matrix, num_channels=16, sampling_frequency=50000):
     spike_times_per_channel = []
     for ch in range(num_channels):
         x = data[:, ch]
         # print(f'threshold for ch {ch}: {threshold_matrix.iloc[ch, 0]}')
-        spike_times = extract_threshold_waveforms(x, threshold_matrix.iloc[ch, 0], args.sampling_frequency)
+        spike_times = extract_threshold_waveforms(x, threshold_matrix.iloc[ch, 0], sampling_frequency)
         spike_times_per_channel.append(spike_times)
     
     del data
