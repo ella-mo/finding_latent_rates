@@ -20,9 +20,14 @@ from data_functions import (create_correlogram_plots,
                             changes_btwn_recordings, 
                             get_well_stats, 
                             make_comparison_figs,
-                            test_treatment_effectiveness
+                            test_treatment_effectiveness,
+                            channel_mapping_indices_to_actual
                             )
 
+# python main.py '/oscar/home/emohanra/scratch/lizarraga/finding_latent_rates/mea-mua-analysis/files' '/oscar/data/slizarra/emohanra/waveformVariability/bin_files' -d 83 -r 6 -w C2 -vt
+# python main.py '/oscar/home/emohanra/scratch/lizarraga/finding_latent_rates/mea-mua-analysis/files' -d 83 -r 6 -w C2 -vt
+# python main.py '/oscar/home/emohanra/scratch/lizarraga/finding_latent_rates/mea-mua-analysis/files' -d 65 -r 0 2 4 6 8 10  -w B2 -i 0 5 9 12 13 14 -st
+# python main.py '/oscar/home/emohanra/scratch/lizarraga/finding_latent_rates/mea-mua-analysis/files' -d 65 -r 0 -w B1 -i 0 1 4 8 -st
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="Inspect and analyze raw data")
@@ -58,7 +63,7 @@ if __name__ == "__main__":
     # PARAMETERS
     min_secs = 0.002
     max_secs = 30
-    bin_size_secs = 0.05
+    bin_size_secs = 0.15
 
     if args.do_spike_time_analysis:
         print('Doing spike time analysis...')
@@ -155,7 +160,7 @@ if __name__ == "__main__":
         for idx, well in enumerate(args.well):
             well_data = merged_df[merged_df['well'] == well].copy()
             well_data = well_data.sort_values(['day', 'recording'])
-            channel_cols = [str(i) for i in range(16)]
+            channel_cols = [str(i) for i in range(args.num_channels)]
             
             # Calculate changes between consecutive recordings
             changes = changes_btwn_recordings(well_data, well, channel_cols, voltage_threshold_folder)
@@ -170,7 +175,7 @@ if __name__ == "__main__":
                 
                 sns.heatmap(threshold_matrix, annot=True, fmt='.3f', cmap='viridis',
                             xticklabels=timepoint_labels,
-                            yticklabels=[f'Ch {i}' for i in range(16)],
+                            yticklabels=[f'Ch {channel_mapping_indices_to_actual(ch)}' for ch in range(args.num_channels)],
                             ax=threshold_axes[idx], cbar_kws={'label': 'Threshold'},
                             vmin=4.5, vmax=7)
                 threshold_axes[idx].set_title(f'Well {well}')
@@ -191,14 +196,17 @@ if __name__ == "__main__":
                 # Transpose so channels are rows, transitions are columns
                 change_matrix = np.array(change_matrix).T
                 
-                sns.heatmap(change_matrix, annot=True, fmt='.3f', cmap='RdBu_r', center=0,
-                            xticklabels=transition_labels,
-                            yticklabels=[f'Ch {i}' for i in range(16)],
-                            ax=change_threshold_axes[idx], cbar_kws={'label': 'Threshold Change'},
-                            vmin=-0.8, vmax=0.3)
-                change_threshold_axes[idx].set_title(f'Well {well} - Threshold Changes')
-                change_threshold_axes[idx].set_xlabel('Transition')
-                change_threshold_axes[idx].set_ylabel('Channel')
+                try:
+                    sns.heatmap(change_matrix, annot=True, fmt='.3f', cmap='RdBu_r', center=0,
+                                xticklabels=transition_labels,
+                                yticklabels=[f'Ch {channel_mapping_indices_to_actual(ch)}' for ch in range(args.num_channels)],
+                                ax=change_threshold_axes[idx], cbar_kws={'label': 'Threshold Change'},
+                                vmin=-0.8, vmax=0.3)
+                    change_threshold_axes[idx].set_title(f'Well {well} - Threshold Changes')
+                    change_threshold_axes[idx].set_xlabel('Transition')
+                    change_threshold_axes[idx].set_ylabel('Channel')
+                except IndexError:
+                    print("Not enough recordings inputted (must have 2 or more)")
             else:
                 # Determine treatment effectiveness between two recordings: control and 15/30 minutes after application of treatment 
                 treatment_effectiveness_per_well_folder = Path(f'{treatment_effectiveness_folder}/{well}')
@@ -221,7 +229,7 @@ if __name__ == "__main__":
             percent_matrix = np.vstack(well_percent_change).T
             sns.heatmap(percent_matrix, annot=True, fmt='.3f', cmap='RdBu_r', center=0,
                         xticklabels=args.well,
-                        yticklabels=[f'Ch {i}' for i in range(args.num_channels)],
+                        yticklabels=[f'Ch {channel_mapping_indices_to_actual(ch)}' for ch in range(args.num_channels)],
                         ax=percent_reduct_axes, cbar_kws={'label': 'Percent Change'},
                         vmin=-100, vmax=100)
             percent_reduct_fig.tight_layout()

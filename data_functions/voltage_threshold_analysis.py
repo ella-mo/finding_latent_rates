@@ -14,6 +14,8 @@ _project_root = Path(__file__).parent.parent
 if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
+from data_functions.general_functions import channel_mapping_indices_to_actual, channel_mapping_indices_to_color
+
 
 def changes_btwn_recordings(well_data, well, channel_cols, output_path):
     changes = []
@@ -196,7 +198,6 @@ def test_treatment_effectiveness(day, well, threshold_matrix, bin_files_folder, 
         # Create voltage histogram to see distribution of voltage per channel
         control_voltage = control_data[:, ch]
         treatment_voltage = treatment_data[:, ch]
-        print(len(control_voltage), len(treatment_voltage))
 
         plt.figure(figsize=(10,8))
         #PARAMETER
@@ -204,13 +205,13 @@ def test_treatment_effectiveness(day, well, threshold_matrix, bin_files_folder, 
         plt.hist(control_voltage, bins=bins, density=True, alpha=0.5, label='Control', color='blue')
         plt.hist(treatment_voltage, bins=bins, density=True, alpha=0.5, label='Treatment', color='orange')
         
-        plt.title(f'Well {well} - Channel {ch} Voltage Distribution')
+        plt.title(f'Well {well} - Channel {channel_mapping_indices_to_actual(ch)} Voltage Distribution')
         plt.xlabel('Voltage (uV)')
         plt.ylabel('Cumulative voltage count')
         plt.legend()
         plt.tight_layout()
         os.makedirs(f'{output_folder}/voltage_distribution', exist_ok=True)
-        plt.savefig(f'{output_folder}/voltage_distribution/ch_{ch}_voltage_distribution.png')
+        plt.savefig(f'{output_folder}/voltage_distribution/ch_{channel_mapping_indices_to_actual(ch)}_voltage_distribution.png')
         plt.close()
 
         # Create times of threshold crossings vs total number of spikes (cumulative) for each channel
@@ -228,13 +229,13 @@ def test_treatment_effectiveness(day, well, threshold_matrix, bin_files_folder, 
             treatment_counts = np.arange(1, treatment_sorted.size + 1)
             plt.step(treatment_sorted, treatment_counts, where='post', label='Treatment', color='orange')
 
-        plt.title(f'Well {well} - Channel {ch} Spike Counts Over Time')
+        plt.title(f'Well {well} - Channel {channel_mapping_indices_to_actual(ch)} Spike Counts Over Time')
         plt.xlabel('Time (s)')
         plt.ylabel('Cumulative spike count')
         plt.legend()
         plt.tight_layout()
         os.makedirs(f'{output_folder}/spike_counts', exist_ok=True)
-        plt.savefig(f'{output_folder}/spike_counts/ch_{ch}_spike_counts.png')
+        plt.savefig(f'{output_folder}/spike_counts/ch_{channel_mapping_indices_to_actual(ch)}_spike_counts.png')
         plt.close()
 
     # Per-channel percent change in spike count for this well
