@@ -13,8 +13,9 @@ _project_root = Path(__file__).parent.parent
 if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
-from data_functions import (create_correlogram_plots,
-                            create_peak_lags_histogram, 
+from data_functions import (create_autocorrelogram_plots,
+                            create_joint_autocorrelogram_plots,
+                            create_crosscorrelogram_plots,
                             create_spike_times_diff_histogram, 
                             parse_filename, 
                             changes_btwn_recordings, 
@@ -26,8 +27,9 @@ from data_functions import (create_correlogram_plots,
 
 # python main.py '/oscar/home/emohanra/scratch/lizarraga/finding_latent_rates/mea-mua-analysis/files' '/oscar/data/slizarra/emohanra/waveformVariability/bin_files' -d 83 -r 6 -w C2 -vt
 # python main.py '/oscar/home/emohanra/scratch/lizarraga/finding_latent_rates/mea-mua-analysis/files' -d 83 -r 6 -w C2 -vt
-# python main.py '/oscar/home/emohanra/scratch/lizarraga/finding_latent_rates/mea-mua-analysis/files' -d 65 -r 0 2 4 6 8 10  -w B2 -i 0 5 9 12 13 14 -st
+# python main.py '/oscar/home/emohanra/scratch/lizarraga/finding_latent_rates/mea-mua-analysis/files' -d 65 -w B2 -i 0 5 9 14 -st -ic -r 0 2
 # python main.py '/oscar/home/emohanra/scratch/lizarraga/finding_latent_rates/mea-mua-analysis/files' -d 65 -r 0 -w B1 -i 0 1 4 8 -st
+
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="Inspect and analyze raw data")
@@ -41,6 +43,7 @@ if __name__ == "__main__":
     parser.add_argument("-st", "--do_spike_time_analysis", action="store_true", help="whether to do spike time analysis")
     parser.add_argument("-vt", "--do_voltage_threshold_anlaysis", action="store_true", help="whether to do voltage threshold analysis")
     #e.g. if you want to do spike time analysis, add -st flag; voltage threshold analysis, -vt
+    parser.add_argument("-ic", "--interactive_correlograms", action="store_true", help="show GUI with sliders for cross-correlogram bin size and max lag instead of only saving PNGs")
     parser.add_argument("-n", "--num_channels", default=16, help="number of channels")
     args = parser.parse_args()
 
@@ -53,6 +56,8 @@ if __name__ == "__main__":
     os.makedirs(peak_lags_folder, exist_ok=True)
     spike_times_folder = Path(f'{cross_analysis_folder}/spike_times')
     os.makedirs(spike_times_folder, exist_ok=True)
+    auto_correlograms_folder = Path(f'{cross_analysis_folder}/auto_correlograms')
+    os.makedirs(auto_correlograms_folder, exist_ok=True)
     treatment_effectiveness_folder = Path(f'{cross_analysis_folder}/treatment_effectiveness')
     os.makedirs(treatment_effectiveness_folder, exist_ok=True)
     voltage_threshold_folder = Path(f'{cross_analysis_folder}/voltage_thresholds')
@@ -62,7 +67,7 @@ if __name__ == "__main__":
 
     # PARAMETERS
     min_secs = 0.002
-    max_secs = 30
+    max_secs = 10
     bin_size_secs = 0.15
 
     if args.do_spike_time_analysis:
@@ -73,6 +78,7 @@ if __name__ == "__main__":
             all_wells_peak_lags_per_channel = {}
 
             for day in args.day:
+                spike_times_all_recordings = {}
                 for recording in args.recording:
                     base_name = f"d{day}_r{recording:03d}_w{well}"
                     filepath = os.path.join(
@@ -81,6 +87,7 @@ if __name__ == "__main__":
                         "spike_times.npy"
                     )
                     spike_times = np.load(filepath, allow_pickle=True) #numpy.ndarray
+                    spike_times_all_recordings[recording] = spike_times
 
                     for channel_idx in args.indices:
                         spike_time_diff_channel = np.diff(spike_times[channel_idx])
@@ -91,25 +98,45 @@ if __name__ == "__main__":
 
                     base_name_folder = f'{visualizations_folder}/{base_name}'
                     os.makedirs(f'{base_name_folder}/auto_correlograms', exist_ok=True)
-                    os.makedirs(f'{base_name_folder}/cross_correlograms', exist_ok=True)
 
-                    peak_lags_per_channel = create_correlogram_plots(
-                        spike_times, 
-                        args.indices, 
-                        base_name, 
+                    # Per-recording autocorrelograms
+                    create_autocorrelogram_plots(
+                        spike_times,
+                        args.indices,
+                        base_name,
                         well,
-                        base_name_folder, 
+                        base_name_folder,
                         min_lag_seconds=min_secs,
                         max_lag_seconds=max_secs,
-                        bin_size_seconds=bin_size_secs
+                        bin_size_seconds=bin_size_secs,
                     )
-                    for k, v in peak_lags_per_channel.items():
-                        if k not in all_wells_peak_lags_per_channel:
-                            all_wells_peak_lags_per_channel[k] = list(v)
-                        else:
-                            all_wells_peak_lags_per_channel[k].extend(v)
-        
-            create_peak_lags_histogram(all_wells_peak_lags_per_channel, args.day, args.recording, well, peak_lags_folder, bins=30)
+
+                # Joint autocorrelograms across recordings, saved in
+                # visualizations/cross_analysis/auto_correlograms
+                create_joint_autocorrelogram_plots(
+                    spike_times_all_recordings, 
+                    args.indices, 
+                    day, 
+                    well,
+                    auto_correlograms_folder, 
+                    min_lag_seconds=min_secs,
+                    max_lag_seconds=max_secs,
+                    bin_size_seconds=bin_size_secs,
+                )
+
+                os.makedirs(f'{base_name_folder}/cross_correlograms', exist_ok=True)
+
+                create_crosscorrelogram_plots(
+                    spike_times_all_recordings, 
+                    args.indices, 
+                    base_name, 
+                    well,
+                    base_name_folder, 
+                    min_lag_seconds=min_secs,
+                    max_lag_seconds=max_secs,
+                    bin_size_seconds=bin_size_secs,
+                    interactive=args.interactive_correlograms,
+                )
 
             #mask to consider min and max
             # Mask each channel's spike times individually and keep dictionary structure

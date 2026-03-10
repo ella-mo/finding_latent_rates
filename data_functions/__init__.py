@@ -1,6 +1,7 @@
 from .general_functions import stitch_data, channel_mapping_indices_to_actual, channel_mapping_indices_to_color, parse_filename
-from .spike_time_analysis import (create_correlogram_plots, 
-                            create_peak_lags_histogram, 
+from .spike_time_analysis import (create_autocorrelogram_plots,
+                            create_joint_autocorrelogram_plots,
+                            create_crosscorrelogram_plots, 
                             create_spike_times_diff_histogram)
 from .voltage_threshold_analysis import (changes_btwn_recordings, 
                             get_well_stats, 
@@ -15,7 +16,7 @@ from .lfads_output_analysis import (set_up,
                             cross_recording_ipis_histogram)
 
 __all__ = ['stitch_data', 'channel_mapping_indices_to_actual', 'channel_mapping_indices_to_color', 'parse_filename',
-            'create_correlogram_plots', 'create_peak_lags_histogram', 'create_spike_times_diff_histogram',
+            'create_autocorrelogram_plots', 'create_joint_autocorrelogram_plots', 'create_crosscorrelogram_plots', 'create_spike_times_diff_histogram',
             'changes_btwn_recordings', 'get_well_stats', 'make_comparison_figs', 'extract_threshold_waveforms', 'test_treatment_effectiveness',
             'set_up', 'make_detect_peaks_figs', 'make_peak_histograms', 'aligned_ensemble', 'ipi_distribution', 'cross_recording_ipis_histogram']
 
