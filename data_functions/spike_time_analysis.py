@@ -48,11 +48,10 @@ def compute_crosscorr_for_pair(
     spike_times_ch2,
     bin_size_seconds,
     recording_duration_seconds=900,
-    max_lag_seconds=10.0,
 ):
     """
-    Compute binned, normalized cross-correlation between two spike trains,
-    returning lags (in seconds) and cross-correlation values within +/- max_lag_seconds.
+    Compute binned, normalized correlation between two spike trains,
+    returning lags (in seconds) and cross-correlation values 
     """
     train1 = compute_binned_spike_train(
         spike_times_ch1, bin_size_seconds, recording_duration_seconds
@@ -61,26 +60,102 @@ def compute_crosscorr_for_pair(
         spike_times_ch2, bin_size_seconds, recording_duration_seconds
     )
 
-    crosscorr = signal.correlate(train1, train2, mode='full') / len(train1)
+    corr = signal.correlate(train1, train2, mode='full') / len(train1) 
+    # len(train1) is the number of bins, 
     lags = signal.correlation_lags(len(train1), len(train2), mode='full')
     lags_seconds = lags * bin_size_seconds
 
-    mask = np.abs(lags_seconds) <= max_lag_seconds
-    return lags_seconds[mask], crosscorr[mask]
+    return lags_seconds, corr
 
 def create_crosscorrelogram_plots(
-    spike_times_dict,
-    channel_indices,
-    dirname,
-    well,
-    output_path,
-    fs=50000,
-    min_lag_seconds=0.006,
-    max_lag_seconds=10.0,
-    bin_size_seconds=0.002,
-    recording_duration_seconds=900,
-    interactive=False,
-):
+        spike_times,
+        channel_indices,
+        dirname,
+        well,
+        output_path,
+        fs=50000,
+        min_lag_seconds=0.006,
+        max_lag_seconds=10.0,
+        bin_size_seconds=0.002,
+        recording_duration_seconds=900,
+    ):
+    """
+    Create cross-correlogram plots for given channel indices    
+    Parameters:
+    -----------
+    spike_times : numpy array
+        Data array with shape (num_channels,) where each entry is a 1D array
+        of spike times for that channel (seconds).
+    channel_indices : list
+        Channel indices to analyze
+    output_path : str or Path
+        Where to save the output figure
+    fs : int
+        Sampling rate in Hz (default: 50000)
+    min_lag_seconds : float
+        Minimum lag to display in seconds (default: 0.006 to exclude spike width)
+    max_lag_seconds : float
+        Maximum lag to display in seconds (default: 10.0)
+    bin_size_seconds : float
+        Bin size for spike train in seconds (default: 0.001, i.e., 1ms)
+    recording_duration_seconds : float
+        Total recording duration in seconds (default: 900)
+    """
+    for ch1, ch2 in combinations(channel_indices, 2):
+        # One figure per channel-pair for this single recording
+        fig, ax = plt.subplots(figsize=(16, 6))
+
+        lags_seconds, crosscorr = compute_crosscorr_for_pair(
+            np.asarray(spike_times[ch1]),
+            np.asarray(spike_times[ch2]),
+            bin_size_seconds=bin_size_seconds,
+            recording_duration_seconds=recording_duration_seconds,
+        )
+
+        # smoothing function
+        smooth_crosscorr = gaussian_filter(crosscorr, sigma=2)
+
+        ax.plot(lags_seconds, crosscorr, alpha=0.6, linewidth=1.5, label='Cross-correlogram')
+        ax.plot(lags_seconds, smooth_crosscorr, alpha=0.6, linewidth=2, linestyle='--', label='Smoothed cross-correlogram')
+        ax.axvline(0, color='k', linestyle='--', linewidth=0.8, alpha=0.5)
+        ax.set_xlabel(
+            f'{channel_mapping_indices_to_actual(ch1)} leads {channel_mapping_indices_to_actual(ch2)} ------ '
+            f'{channel_mapping_indices_to_actual(ch2)} leads {channel_mapping_indices_to_actual(ch1)}',
+            fontsize=14,
+        )
+        ax.set_ylabel('Normalized Cross-correlation', fontsize=14)
+        fig.suptitle(
+            f'Cross-correlogram for Channels {channel_mapping_indices_to_actual(ch1)} & {channel_mapping_indices_to_actual(ch2)}',
+            fontsize=16,
+        )
+        ax.set_title(f'{dirname}', fontsize=8)
+        ax.set_xlim(-max_lag_seconds, max_lag_seconds)
+        ax.legend()
+        #PARAMETERS
+        # ax.set_ylim(-0.045, 0.045)
+        ax.set_ylim(-0.2, 0.6)
+
+        ax.grid(True, alpha=0.3)
+        fig.tight_layout()
+        plt.savefig(
+            f'{output_path}/cross_correlograms/{channel_mapping_indices_to_actual(ch1)}_vs_{channel_mapping_indices_to_actual(ch2)}.png'
+        )
+        plt.close(fig)
+
+
+def create_joint_crosscorrelogram_plots(
+        spike_times_dict,
+        channel_indices,
+        dirname,
+        well,
+        output_path,
+        fs=50000,
+        min_lag_seconds=0.006,
+        max_lag_seconds=10.0,
+        bin_size_seconds=0.002,
+        recording_duration_seconds=900,
+        interactive=False,
+    ):
     """
     Create cross-correlogram plots for given channel indices    
     Parameters:
@@ -101,6 +176,8 @@ def create_crosscorrelogram_plots(
         Bin size for spike train in seconds (default: 0.001, i.e., 1ms)
     recording_duration_seconds : float
         Total recording duration in seconds (default: 900)
+    interactive : boolean
+        
     """
     #TODO: fix naming scheme
     # Extract day from dirname (e.g., "d65_r000_wB2") if possible
@@ -123,50 +200,35 @@ def create_crosscorrelogram_plots(
                 np.asarray(spike_times[ch2]),
                 bin_size_seconds=bin_size_seconds,
                 recording_duration_seconds=recording_duration_seconds,
-                max_lag_seconds=max_lag_seconds,
             )
 
-            # # smoothing function
-            # def smoothed_cross_corr(data, window_size):
-            #     return np.convolve(data, np.ones(window_size) / window_size, mode='same') #https://www.statology.org/how-to-perform-time-series-analysis-with-scipy/
-            # # Convert time to bins
-            # window_size_seconds = 0.5  # PARAMETER
-            # window_size_bins = int(window_size_seconds / bin_size_seconds)
-            # if window_size_bins % 2 == 0:
-            #     window_size_bins += 1
-            # smoothed_corr_sg = smoothed_cross_corr(crosscorr, window_size_bins)
-            # smoothed_corr_sg = gaussian_filter(crosscorr, sigma=2)
+            # smoothing function
+            smooth_crosscorr = gaussian_filter(init_crosscorr, sigma=2)
 
             (line,) = ax.plot(
                 init_lags_seconds,
-                init_crosscorr,
+                smooth_crosscorr,
                 alpha=0.6,
-                linewidth=1.5,
+                linewidth=2,
                 label=f"{recording_num:03d}",
             )
             line_handles.append(line)
 
         ax.legend(title="Recording")
         ax.axvline(0, color='k', linestyle='--', linewidth=0.8, alpha=0.5)
-        ax.set_xlabel('Lag (s)', fontsize=14)
+        ax.set_xlabel(f'{channel_mapping_indices_to_actual(ch1)} leads {channel_mapping_indices_to_actual(ch2)} ------ {channel_mapping_indices_to_actual(ch2)} leads {channel_mapping_indices_to_actual(ch1)}', fontsize=14)
         ax.set_ylabel('Normalized Cross-correlation', fontsize=14)
 
-        if interactive:
-            # When interactive, emphasize day, well, and recording numbers
-            fig.suptitle(
-                f'Cross-correlograms - Day {day_str}, Well {well}, '
-                f'Channels {channel_mapping_indices_to_actual(ch1)} & {channel_mapping_indices_to_actual(ch2)}',
-                fontsize=16,
-            )
-            ax.set_title(f'Recordings: {recordings_str}', fontsize=8)
-        else:
-            fig.suptitle(
-                f'Cross-correlogram for Channels {channel_mapping_indices_to_actual(ch1)} & {channel_mapping_indices_to_actual(ch2)}',
-                fontsize=16,
-            )
+        fig.suptitle(
+            f'Smoothed Cross-correlograms - Day {day_str}, Well {well}, '
+            f'Channels {channel_mapping_indices_to_actual(ch1)} & {channel_mapping_indices_to_actual(ch2)}',
+            fontsize=16,
+        )
+        ax.set_title(f'Recordings: {recordings_str}', fontsize=8)
         ax.set_xlim(-max_lag_seconds, max_lag_seconds)
-        ax.set_ylim(-0.05, 0.05)
-        # ax.set_ylim(-0.2, 0.6)
+        #PARAMETERS
+        # ax.set_ylim(-0.045, 0.045)
+        ax.set_ylim(-0.2, 0.6)
 
         ax.grid(True, alpha=0.3)
 
@@ -204,7 +266,6 @@ def create_crosscorrelogram_plots(
                         np.asarray(spike_times[ch2]),
                         bin_size_seconds=current_bin,
                         recording_duration_seconds=recording_duration_seconds,
-                        max_lag_seconds=current_max,
                     )
                     line.set_xdata(new_lags)
                     line.set_ydata(new_crosscorr)
@@ -221,9 +282,9 @@ def create_crosscorrelogram_plots(
         else:
             fig.tight_layout()
             plt.savefig(
-                f'{output_path}/cross_correlograms/{channel_mapping_indices_to_actual(ch1)}_vs_{channel_mapping_indices_to_actual(ch2)}.png'
+                f'{output_path}/d{day_str}_w{well}_{channel_mapping_indices_to_actual(ch1)}_vs_{channel_mapping_indices_to_actual(ch2)}.png'
             )
-            plt.close()
+            plt.close(fig)
 
 def create_autocorrelogram_plots(
         spike_times,
@@ -242,20 +303,15 @@ def create_autocorrelogram_plots(
     channel per recording.
     """
     for channel_idx in channel_indices:
-        spike_train = compute_binned_spike_train(
-            spike_times[channel_idx],
-            bin_size_seconds,
+        lags_seconds, autocorr = compute_crosscorr_for_pair(
+            np.asarray(spike_times[channel_idx]),
+            np.asarray(spike_times[channel_idx]),
+            bin_size_seconds=bin_size_seconds,
             recording_duration_seconds=recording_duration_seconds,
         )
-        
-        autocorr = signal.correlate(spike_train, spike_train, mode='full') / (len(spike_train) * bin_size_seconds)
-
-        lags = signal.correlation_lags(len(spike_train), len(spike_train), mode='full')
-        lags_seconds = lags * bin_size_seconds
 
         fig = plt.figure(figsize=(10, 6))
         ax = fig.add_subplot(1, 1, 1)
-
         ax.plot(
             lags_seconds,
             autocorr,
@@ -265,14 +321,14 @@ def create_autocorrelogram_plots(
         )
         ax.legend()
         ax.set_xlabel('Lag (s)', fontsize=14)
-        ax.set_ylabel('Rate of Change of Spike Rate (Hz/s)', fontsize=14)
+        ax.set_ylabel('Correlation Coefficient', fontsize=14)
         fig.suptitle(
             f'Autocorrelogram for Channel {channel_mapping_indices_to_actual(channel_idx)}',
             fontsize=16,
         )
         ax.set_title(f'{dirname}', fontsize=8)
         ax.set_xlim(min_lag_seconds, max_lag_seconds)
-        ax.set_ylim(-2, 10)
+        ax.set_ylim(-0.5, 1)
         ax.grid(True, alpha=0.3)
         fig.tight_layout()
         plt.savefig(
@@ -298,28 +354,20 @@ def create_joint_autocorrelogram_plots(
     for a given day and well. Figures are saved in a shared folder, one
     per channel.
     """
-    output_path = Path(output_path)
-    output_path.mkdir(parents=True, exist_ok=True)
-
     recording_ids = sorted(spike_times_dict.keys())
+    recordings_str = ", ".join(f"{r:03d}" for r in recording_ids)
 
     for channel_idx in channel_indices:
         fig, ax = plt.subplots(figsize=(10, 6))
 
         for recording_num in recording_ids:
             spike_times = spike_times_dict[recording_num]
-            spike_train = compute_binned_spike_train(
-                spike_times[channel_idx],
-                bin_size_seconds,
+            lags_seconds, autocorr = compute_crosscorr_for_pair(
+                np.asarray(spike_times[channel_idx]),
+                np.asarray(spike_times[channel_idx]),
+                bin_size_seconds=bin_size_seconds,
                 recording_duration_seconds=recording_duration_seconds,
             )
-
-            autocorr = signal.correlate(
-                spike_train, spike_train, mode='full'
-            ) / (len(spike_train) * bin_size_seconds)
-
-            lags = signal.correlation_lags(len(spike_train), len(spike_train), mode='full')
-            lags_seconds = lags * bin_size_seconds
 
             ax.plot(
                 lags_seconds,
@@ -331,9 +379,8 @@ def create_joint_autocorrelogram_plots(
 
         ax.legend(title="Recording")
         ax.set_xlabel('Lag (s)', fontsize=14)
-        ax.set_ylabel('Rate of Change of Spike Rate (Hz/s)', fontsize=14)
+        ax.set_ylabel('Correlation Coefficient', fontsize=14)
 
-        recordings_str = ", ".join(f"{r:03d}" for r in recording_ids)
         fig.suptitle(
             f'Autocorrelograms - Day {day}, Well {well}, '
             f'Channel {channel_mapping_indices_to_actual(channel_idx)}\n'
@@ -342,7 +389,7 @@ def create_joint_autocorrelogram_plots(
         )
 
         ax.set_xlim(min_lag_seconds, max_lag_seconds)
-        ax.set_ylim(-2, 8) #PARAMETER
+        ax.set_ylim(-0.5, 1) #PARAMETER
         ax.grid(True, alpha=0.3)
 
         fig.tight_layout()

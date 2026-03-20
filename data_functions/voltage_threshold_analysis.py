@@ -198,17 +198,26 @@ def test_treatment_effectiveness(day, well, threshold_matrix, bin_files_folder, 
         # Create voltage histogram to see distribution of voltage per channel
         control_voltage = control_data[:, ch]
         treatment_voltage = treatment_data[:, ch]
+    
+        control_sorted = np.sort(control_voltage)
+        treatment_sorted = np.sort(treatment_voltage)
 
-        plt.figure(figsize=(10,8))
-        #PARAMETER
-        bins = 30
-        plt.hist(control_voltage, bins=bins, density=True, alpha=0.5, label='Control', color='blue')
-        plt.hist(treatment_voltage, bins=bins, density=True, alpha=0.5, label='Treatment', color='orange')
-        
-        plt.title(f'Well {well} - Channel {channel_mapping_indices_to_actual(ch)} Voltage Distribution')
+        all_voltage = np.hstack((control_voltage, treatment_voltage))
+        x = np.linspace(*np.percentile(all_voltage, [0.5, 99.5]), 1000)
+
+        control_cdf = np.searchsorted(control_sorted, x) / len(control_sorted)
+        treatment_cdf = np.searchsorted(treatment_sorted, x) / len(treatment_sorted)
+
+        diff = control_cdf - treatment_cdf
+
+        plt.figure(figsize=(10, 5))
+        plt.plot(x, diff, color='purple')
+        plt.axhline(0, color='black', linewidth=0.8, linestyle='--')
+        plt.fill_between(x, diff, alpha=0.3, color='purple')
         plt.xlabel('Voltage (uV)')
-        plt.ylabel('Cumulative voltage count')
-        plt.legend()
+        plt.ylabel('CDF(Control) - CDF(Treatment)')
+        plt.title(f'Channel {channel_mapping_indices_to_actual(ch)} CDF Difference')
+        plt.xlim(-10, 10) 
         plt.tight_layout()
         os.makedirs(f'{output_folder}/voltage_distribution', exist_ok=True)
         plt.savefig(f'{output_folder}/voltage_distribution/ch_{channel_mapping_indices_to_actual(ch)}_voltage_distribution.png')
