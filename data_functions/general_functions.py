@@ -4,6 +4,7 @@ from pathlib import Path
 import h5py
 from scipy.io import savemat
 import sys 
+import re
 
 def channel_mapping_indices_to_actual(channel_num_idx):
     return str((channel_num_idx // 4 + 1) * 10 + (channel_num_idx % 4 + 1))
@@ -11,13 +12,13 @@ def channel_mapping_indices_to_actual(channel_num_idx):
 def channel_mapping_indices_to_color(channel_num_idx, well):
     patient_wells = ['B1']
 
-    control_colors = {0: "#57a6ad", 3: "#2c5c39", 5: "#56ebd3", 9: "#075c62", 11: "#79b559", 14: "#3d99ce"}
+    control_colors = {0: "#57a6ad", 3: "#2c5c39", 5: "#56ebd3", 9: "#075c62", 11: "#79b559", 12: "#069668", 13: "#a0e3b7", 14: "#3d99ce"}
     patient_colors = {0: "#9f3b60", 1: "#fdb5ac", 4:"#4f4447", 8:"#fe1d66"}
     
     if well in patient_wells:
-        return patient_colors[channel_num_idx]
+        return patient_colors.get(channel_num_idx, "#f5424e")
     else:
-        return control_colors[channel_num_idx]
+        return control_colors.get(channel_num_idx, "#4260f5")
 
 def parse_filename(filename):
     """Extract day, recording, and well from filename like d83_r006_wD4_thresholds.csv"""

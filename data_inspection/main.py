@@ -29,8 +29,8 @@ from data_functions import (create_autocorrelogram_plots,
 # python main.py '/oscar/scratch/emohanra/lizarraga/finding_latent_rates/mea-mua-analysis/files' '/oscar/scratch/emohanra/lizarraga/waveformVariability/bin_files' -d 83 -r 6 9 -w C2 -vt
 # python main.py '/oscar/scratch/emohanra/lizarraga/finding_latent_rates/mea-mua-analysis/files' -d 83 -r 6 -w C2 -vt
 # python main.py '/oscar/scratch/emohanra/lizarraga/finding_latent_rates/mea-mua-analysis/files' -d 65 -w B2 -i 0 3 11 14 -st -r 0 2
-# python main.py '/oscar/scratch/emohanra/lizarraga/finding_latent_rates/mea-mua-analysis/files' -d 65 -r 0 -w B1 -i 0 1 4 8 -st
-# python main.py '/oscar/scratch/emohanra/lizarraga/finding_latent_rates/mea-mua-analysis/files' -d 65 -w B2 A2 -i 0 1 2  3 4 5 6 7 8 9 10 11 12 13 14 15 -st -r 0 2 4 6 8 10
+# python main.py '/oscar/scratch/emohanra/lizarraga/finding_latent_rates/mea-mua-analysis/files' -d 65 -r 0 -w B2 -i 0 1 4 8 -st
+# python main.py '/oscar/scratch/emohanra/lizarraga/finding_latent_rates/mea-mua-analysis/files' -d 65 -i 0 1 2  3 4 5 6 7 8 9 10 11 12 13 14 15 -st -r 0 2 4 6 8 10 -w B2
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="Inspect and analyze raw data")
@@ -57,10 +57,6 @@ if __name__ == "__main__":
     os.makedirs(peak_lags_folder, exist_ok=True)
     spike_times_folder = Path(f'{cross_analysis_folder}/spike_times')
     os.makedirs(spike_times_folder, exist_ok=True)
-    auto_correlograms_folder = Path(f'{cross_analysis_folder}/auto_correlograms')
-    os.makedirs(auto_correlograms_folder, exist_ok=True)
-    cross_correlograms_folder = Path(f'{cross_analysis_folder}/cross_correlograms')
-    os.makedirs(cross_correlograms_folder, exist_ok=True)
     treatment_effectiveness_folder = Path(f'{cross_analysis_folder}/treatment_effectiveness')
     os.makedirs(treatment_effectiveness_folder, exist_ok=True)
     voltage_threshold_folder = Path(f'{cross_analysis_folder}/voltage_thresholds')
@@ -70,8 +66,17 @@ if __name__ == "__main__":
 
     # PARAMETERS
     min_secs = 0.002
-    max_secs = 20
-    bin_size_secs = 0.15
+    max_secs = 2
+    bin_size_secs = 0.05
+    # ylim_bounds = (-0.03, 0.03)
+    ylim_bounds = (-1, 1)
+    # ylim_bounds = (-0.045, 0.045) #control - bin size = 0.15
+    # ylim_bounds = (-0.2, 0.6) #mutant
+
+    auto_correlograms_folder = Path(f'{cross_analysis_folder}/auto_correlograms_bin{bin_size_secs}')
+    os.makedirs(auto_correlograms_folder, exist_ok=True)
+    cross_correlograms_folder = Path(f'{cross_analysis_folder}/cross_correlograms_bin{bin_size_secs}')
+    os.makedirs(cross_correlograms_folder, exist_ok=True)
 
     if args.do_spike_time_analysis:
         print('Doing spike time analysis...')
@@ -116,19 +121,19 @@ if __name__ == "__main__":
                         bin_size_seconds=bin_size_secs,
                     )
 
-                    # print(f'Doing cross correlogram plot for recording {recording:03d}')
-                    # # Per-recording crosscorrelograms
-                    # create_crosscorrelogram_plots(
-                    #     spike_times, 
-                    #     args.indices, 
-                    #     base_name, 
-                    #     well,
-                    #     base_name_folder, 
-                    #     min_lag_seconds=min_secs,
-                    #     max_lag_seconds=max_secs,
-                    #     bin_size_seconds=bin_size_secs,
-                    # )
-
+                    print(f'Doing cross correlogram plot for recording {recording:03d}')
+                    # Per-recording crosscorrelograms
+                    create_crosscorrelogram_plots(
+                        spike_times, 
+                        args.indices, 
+                        base_name, 
+                        well,
+                        base_name_folder, 
+                        ylim_bounds,
+                        min_lag_seconds=min_secs,
+                        max_lag_seconds=max_secs,
+                        bin_size_seconds=bin_size_secs,
+                    )
                 print(f'Doing joint autocorrelogram plot')
                 # Joint autocorrelograms across recordings, saved in
                 # visualizations/cross_analysis/auto_correlograms
@@ -142,21 +147,22 @@ if __name__ == "__main__":
                     max_lag_seconds=max_secs,
                     bin_size_seconds=bin_size_secs,
                 )
-                # print(f'Doing joint crosscorrelogram plot')
-                # # Joint cross-correlograms across recordings, saved in
-                # # visualizations/cross_analysis/auto_correlograms,
-                # # uses args.interactive correlograms for interactive GUI
-                # create_joint_crosscorrelogram_plots(
-                #     spike_times_all_recordings, 
-                #     args.indices, 
-                #     base_name, 
-                #     well,
-                #     cross_correlograms_folder, 
-                #     min_lag_seconds=min_secs,
-                #     max_lag_seconds=max_secs,
-                #     bin_size_seconds=bin_size_secs,
-                #     interactive=args.interactive_correlograms,
-                # )
+                print(f'Doing joint crosscorrelogram plot')
+                # Joint cross-correlograms across recordings, saved in
+                # visualizations/cross_analysis/auto_correlograms,
+                # uses args.interactive correlograms for interactive GUI
+                create_joint_crosscorrelogram_plots(
+                    spike_times_all_recordings, 
+                    args.indices, 
+                    base_name, 
+                    well,
+                    cross_correlograms_folder, 
+                    ylim_bounds,
+                    min_lag_seconds=min_secs,
+                    max_lag_seconds=max_secs,
+                    bin_size_seconds=bin_size_secs,
+                    interactive=args.interactive_correlograms,
+                )
 
             # #mask to consider min and max
             # # Mask each channel's spike times individually and keep dictionary structure
